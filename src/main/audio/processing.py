@@ -1,10 +1,11 @@
 import librosa
-from filter import Filter
-from spliter import Spliter
+from main.audio.filter import Filter
+from main.audio.spliter import Spliter
+import soundfile as sf
 
-class AudiosetCreater:
+class Processor:
     
-    def create(self, audio_path):
+    def process(self, audio_path):
         filter = Filter()
         spliter = Spliter()
         
@@ -15,3 +16,4 @@ class AudiosetCreater:
         audioset = spliter.split(cleaned_audio,sr)
         
         return audioset, sr
+    

@@ -1,5 +1,6 @@
-import librosa
 import math
+import librosa
+import soundfile as sf
 
 class Spliter:
 
@@ -20,5 +21,5 @@ class Spliter:
             end_sample = int((i + 1) * samples_per_segment)
             segment = y[start_sample:end_sample]
             audiolist.append(segment)
-            
+
         return audiolist

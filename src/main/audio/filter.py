@@ -13,9 +13,33 @@ class Filter:
 
     # Шумоподавление
     def remove_noise(self, y, sr):
-        noise_sample = y[0:int(0.5 * sr)]  # первые 0.5 секунды как пример шума
+        noise_sample = self.detect_noise(y, sr)  # Используем динамическое определение шума
         y_denoised = nr.reduce_noise(y=y, sr=sr, y_noise=noise_sample)
         return y_denoised
+    
+    
+    def detect_noise(self,y, sr, threshold=0.02):
+
+        #Определяет шумовые сегменты на основе RMS-энергии.
+        #threshold: значение порога для определения шума.
+        
+        frame_length = int(0.025 * sr)  # длина окна анализа (25 ms)
+        hop_length = int(0.01 * sr)     # шаг окна (10 ms)
+        
+        rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
+        
+        # Индексы фреймов, энергия которых ниже порога — считаются шумом
+        noise_indices = np.where(rms < threshold)[0]
+        
+        if len(noise_indices) == 0:
+            raise ValueError("Не удалось обнаружить шумовые фреймы.")
+        
+        # Преобразование индексов фреймов в образцы звука
+        noise_frames = np.concatenate([y[i * hop_length:(i + 1) * hop_length] for i in noise_indices])
+        
+        # Если шумовые фреймы пустые, fallback на первые 0.5 секунды
+        return noise_frames if len(noise_frames) > 0 else y[0:int(0.5 * sr)]
+    
 
 
     # Функция для удаления тишины

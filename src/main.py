@@ -1,45 +1,32 @@
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.templating import Jinja2Templates
-from pathlib import Path
-from backend.api.routes import router as api_router
+from flask import Flask, send_from_directory
+from backend.api.routes import api_bp
+import os
 
-app = FastAPI(title="Voice Recognition System")
+# Абсолютный путь к директории src
+basedir = os.path.abspath(os.path.dirname(__file__))
 
-# Настройка CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = Flask(__name__, static_folder=None)  # Убираем стандартную папку static
+app.register_blueprint(api_bp, url_prefix='/api')
 
-# Настройка шаблонов
-templates = Jinja2Templates(directory=Path("frontend/templates"))
+# Маршруты для фронтенда
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    # Главная страница
+    if path == "":
+        return send_from_directory(os.path.join(basedir, 'frontend/home'), 'index.html')
+    
+    # CSS и JavaScript файлы для разных разделов
+    if path.endswith('.css') or path.endswith('.js'):
+        directory, filename = os.path.split(path)
+        return send_from_directory(os.path.join(basedir, 'frontend', directory), filename)
+    
+    # Специальные разделы сайта
+    if path in ['identification', 'training', 'emtraining', 'panel']:
+        return send_from_directory(os.path.join(basedir, f'frontend/{path}'), 'index.html')
+    
+    # Для всех остальных путей возвращаем главную страницу
+    return send_from_directory(os.path.join(basedir, 'frontend/home'), 'index.html')
 
-# Монтирование статических файлов для каждой страницы
-app.mount("/home/static", StaticFiles(directory=Path("frontend/templates/home/static")), name="home_static")
-app.mount("/training/static", StaticFiles(directory=Path("frontend/templates/training/static")), name="training_static")
-app.mount("/identification/static", StaticFiles(directory=Path("frontend/templates/identification/static")), name="identification_static")
-
-# Подключение API роутов
-app.include_router(api_router, prefix="/api")
-
-# Маршруты для страниц
-@app.get("/")
-async def home():
-    return templates.TemplateResponse("home/index.html", {"request": {}})
-
-@app.get("/training")
-async def training():
-    return templates.TemplateResponse("training/index.html", {"request": {}})
-
-@app.get("/identification")
-async def identification():
-    return templates.TemplateResponse("identification/index.html", {"request": {}})
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)

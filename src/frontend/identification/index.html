@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Идентификация по голосу</title>
+    <link rel="stylesheet" href="/identification/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Идентификация по голосу с распознаванием эмоций</h1>
+        
+        <a href="/" class="back-button">← На главную</a>
+        
+        <div class="emotion-task">
+            <h2>Задание:</h2>
+            <p>Пожалуйста, загрузите аудиозапись с выражением эмоции: <span id="target-emotion" class="emotion-highlight">...</span></p>
+        </div>
+        
+        <div class="form-container">
+            <div class="form-group">
+                <label for="audio-file">Аудиозапись голоса:</label>
+                <div class="file-upload">
+                    <input type="file" id="audio-file" accept="audio/*" class="file-input">
+                    <label for="audio-file" class="file-label">
+                        <span class="file-icon">📁</span>
+                        <span class="file-text">Выберите файл</span>
+                    </label>
+                </div>
+                <div id="file-name" class="file-name"></div>
+            </div>
+            
+            <div class="audio-preview-container" id="audio-preview-container" style="display: none;">
+                <h3>Предпрослушивание:</h3>
+                <audio id="audio-preview" controls></audio>
+                <button id="reset-button" class="reset-button">Отменить выбор</button>
+            </div>
+            
+            <button id="submit-button" class="submit-button" disabled>Проверить идентификацию</button>
+        </div>
+        
+        <div id="result-container" class="result-container" style="display: none;">
+            <h2>Результат:</h2>
+            <div id="result-message" class="result-message"></div>
+        </div>
+        
+        <div id="loading-indicator" class="loading-indicator" style="display: none;">
+            <div class="spinner"></div>
+            <p>Анализ аудиофайла...</p>
+        </div>
+    </div>
+    
+    <script src="/identification/main.js"></script>
+</body>
+</html>

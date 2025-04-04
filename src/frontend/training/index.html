@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Обучение модели идентификации</title>
+    <link rel="stylesheet" href="/home/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Обучение модели идентификации по голосу</h1>
+        
+        <a href="/" class="back-button">← На главную</a>
+        
+        <div class="form-container">
+            <div class="form-group">
+                <label for="username">Ваше имя:</label>
+                <input type="text" id="username" placeholder="Введите ваше имя" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="audio-file">Аудиозапись голоса:</label>
+                <div class="file-upload">
+                    <input type="file" id="audio-file" accept="audio/*" class="file-input">
+                    <label for="audio-file" class="file-label">
+                        <span class="file-icon">📁</span>
+                        <span class="file-text">Выберите файл</span>
+                    </label>
+                </div>
+                <div id="file-name" class="file-name"></div>
+            </div>
+            
+            <div class="audio-preview-container" id="audio-preview-container" style="display: none;">
+                <h3>Предпрослушивание:</h3>
+                <audio id="audio-preview" controls></audio>
+                <button id="reset-button" class="reset-button">Отменить выбор</button>
+            </div>
+            
+            <button id="submit-button" class="submit-button" disabled>Отправить на обучение</button>
+        </div>
+        
+        <div id="status-message" class="status-message"></div>
+        <div id="loading-indicator" class="loading-indicator" style="display: none;">
+            <div class="spinner"></div>
+            <p>Обработка данных...</p>
+        </div>
+    </div>
+    
+    <script src="/home/main.js"></script>
+</body>
+</html>

@@ -46,7 +46,6 @@ def process_audio(audio_file):
     except Exception as e:
         # Логирование ошибки
         error_message = f"Ошибка обработки аудио: {str(e)}"
-        print(error_message)  # Сохраняем вывод в консоль для отладки
         
         # Добавляем ошибку в логгер
         error_logger.log_error(error_message, "audio", "audio_processor")
@@ -99,19 +98,25 @@ def split_audio(audio_data, sr):
     """
     Разделение аудио на фрагменты фиксированной длины
     """
-    # Проверка на пустые данные
-    if len(audio_data) == 0:
+    # Проверка на пустые или некорректные данные
+    if audio_data is None or len(audio_data) == 0:
         return []
     
     # Расчет размера фрагмента в отсчетах
     fragment_size = int(AUDIO_FRAGMENT_LENGTH * sr)
     
+    # Проверка длины аудио
+    if len(audio_data) < fragment_size:
+        # Если аудио короче минимальной длины фрагмента, но все же подходящей длины
+        # для обработки, дополним его тишиной до нужного размера
+        if len(audio_data) >= 1024:  # Минимальный размер для обработки
+            padding = np.zeros(fragment_size - len(audio_data))
+            padded_audio = np.concatenate([audio_data, padding])
+            return [padded_audio]
+        return []
+    
     # Получение количества полных фрагментов
     num_fragments = len(audio_data) // fragment_size
-    
-    # Если аудио короче, чем AUDIO_FRAGMENT_LENGTH, возвращаем пустой список
-    if num_fragments == 0:
-        return []
     
     # Разделение на фрагменты
     fragments = []

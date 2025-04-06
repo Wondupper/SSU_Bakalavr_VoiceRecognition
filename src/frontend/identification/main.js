@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loadingIndicator.style.display = 'none';
             showResult('Ошибка сервера: ' + error.message, 'error');
             document.body.classList.add('error');
-            logErrorToSystem(error, "api_request", "identification");
+            logErrorToSystem(error.message, "api_request", "identification");
         });
     }
     

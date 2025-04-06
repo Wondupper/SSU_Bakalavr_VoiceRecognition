@@ -89,6 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .catch(error => {
             loadingIndicator.style.display = 'none';
             showStatus('Ошибка сервера: ' + error.message, 'error');
+            logErrorToSystem(error.message, "api_request", "emtraining");
         });
     }
     

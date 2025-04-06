@@ -122,48 +122,37 @@ class VoiceIdentificationModel:
     
     def predict(self, audio_fragments):
         """
-        Предсказание идентификации пользователя по аудиофрагментам
+        Предсказание имени пользователя по аудиофрагментам
         """
+        # Проверка, что модель обучена
         if not self.is_trained:
             return "unknown"
         
+        # Проверка на наличие фрагментов
         if not audio_fragments:
             return "unknown"
         
-        if not self.user_labels:
-            return "unknown"
-        
         try:
-            # Извлечение признаков из аудиофрагментов
-            features = np.array([extract_features(fragment) for fragment in audio_fragments])
+            # Извлечение признаков из каждого фрагмента
+            features_list = []
+            for fragment in audio_fragments:
+                features = extract_features(fragment)
+                features_list.append(features)
             
-            # Проверка на наличие признаков после извлечения
-            if features.size == 0:
-                return "unknown"
+            # Среднее значение признаков по всем фрагментам
+            avg_features = np.mean(features_list, axis=0)
             
-            # Получение предсказаний для всех фрагментов
-            predictions = self.model.predict(features)
+            # Изменение формы для подачи в модель
+            input_data = np.expand_dims(avg_features, axis=0)
             
-            # Усреднение предсказаний
-            avg_prediction = np.mean(predictions, axis=0)
-            
-            # Определение наиболее вероятного класса
-            predicted_class = np.argmax(avg_prediction)
-            
-            # Проверка, что predicted_class находится в пределах допустимого диапазона
-            if predicted_class < 0 or predicted_class >= len(self.user_labels):
-                return "unknown"
-            
-            # Если вероятность ниже порога, вернуть "unknown"
-            if avg_prediction[predicted_class] < 0.7:
-                return "unknown"
+            # Предсказание класса
+            predictions = self.model.predict(input_data)
+            predicted_class = np.argmax(predictions[0])
             
             # Возвращение имени пользователя
             return self.user_labels[predicted_class]
         except Exception as e:
             error_message = f"Ошибка при предсказании: {str(e)}"
-            print(error_message)  # Оставляем для отладки
-            
             # Логируем ошибку
             error_logger.log_error(error_message, "model", "voice_identification")
             

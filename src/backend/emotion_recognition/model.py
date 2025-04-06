@@ -94,28 +94,30 @@ class EmotionRecognitionModel:
         """
         Предсказание эмоции по аудиофрагментам
         """
+        # Проверка, что модель обучена
         if not self.is_trained:
             return "unknown"
         
+        # Проверка на наличие фрагментов
         if not audio_fragments:
             return "unknown"
         
         try:
-            # Извлечение признаков из аудиофрагментов
-            features = np.array([extract_features(fragment) for fragment in audio_fragments])
+            # Извлечение признаков из каждого фрагмента
+            features_list = []
+            for fragment in audio_fragments:
+                features = extract_features(fragment)
+                features_list.append(features)
             
-            # Проверка на наличие признаков после извлечения
-            if features.size == 0:
-                return "unknown"
+            # Среднее значение признаков по всем фрагментам
+            avg_features = np.mean(features_list, axis=0)
             
-            # Получение предсказаний для всех фрагментов
-            predictions = self.model.predict(features)
+            # Изменение формы для подачи в модель
+            input_data = np.expand_dims(avg_features, axis=0)
             
-            # Усреднение предсказаний
-            avg_prediction = np.mean(predictions, axis=0)
-            
-            # Определение наиболее вероятного класса
-            predicted_class = np.argmax(avg_prediction)
+            # Предсказание класса
+            predictions = self.model.predict(input_data)
+            predicted_class = np.argmax(predictions[0])
             
             # Проверка, что predicted_class находится в пределах допустимого диапазона
             if predicted_class < 0 or predicted_class >= len(self.emotion_labels):
@@ -125,8 +127,6 @@ class EmotionRecognitionModel:
             return self.emotion_labels[predicted_class]
         except Exception as e:
             error_message = f"Ошибка при предсказании эмоции: {str(e)}"
-            print(error_message)  # Оставляем для отладки
-            
             # Логируем ошибку
             error_logger.log_error(error_message, "model", "emotion_recognition")
             

@@ -21,7 +21,7 @@ function checkModelStatus() {
             // Обновляем информацию о тренировке
             updateTrainingInfo(data);
         })
-        .catch(error => logErrorToSystem(error, "status_checker"));
+        .catch(error => logErrorToSystem(error.message || "Ошибка проверки статуса", "status_checker"));
 }
 
 // Показать оверлей блокировки при обучении
@@ -216,14 +216,11 @@ function checkSystemErrors(displayElement = null) {
                 displayElement.style.display = 'block';
             }
         })
-        .catch(error => logErrorToSystem(error, "system_errors"));
+        .catch(error => logErrorToSystem(error.message || "Ошибка получения списка ошибок", "system_errors"));
 }
 
 // Определяем глобальную функцию логирования ошибок
 window.logErrorToSystem = function(error, module = "frontend", location = window.location.pathname) {
-    // Локальное логирование для отладки (можно отключить в продакшн)
-    console.error(`[${module}] ${error}`);
-    
     // Попытка отправить ошибку на сервер, если это возможно
     try {
         fetch('/api/errors/log', {

@@ -45,8 +45,9 @@ def id_training():
                 # Запустить обучение в отдельном потоке
                 threading.Thread(target=train_voice_id_model, args=(dataset,)).start()
                 return jsonify({'message': 'Обучение модели начато успешно'}), 200
-            finally:
-                pass  # Блокировка будет освобождена после обучения
+            except Exception as e:
+                voice_id_model_lock.release()
+                raise e
         else:
             return jsonify({'error': 'Модель уже обучается. Попробуйте позже'}), 429
     except Exception as e:
@@ -80,8 +81,9 @@ def em_training():
                 # Запустить обучение в отдельном потоке
                 threading.Thread(target=train_emotion_model, args=(dataset,)).start()
                 return jsonify({'message': 'Обучение модели начато успешно'}), 200
-            finally:
-                pass  # Блокировка будет освобождена после обучения
+            except Exception as e:
+                emotion_model_lock.release()
+                raise e
         else:
             return jsonify({'error': 'Модель уже обучается. Попробуйте позже'}), 429
     except Exception as e:

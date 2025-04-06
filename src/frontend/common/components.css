@@ -1,0 +1,82 @@
+/* Общий стиль кнопок */
+.button {
+    padding: 12px 24px;
+    border-radius: var(--border-radius);
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: all var(--transition-speed);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.button-primary {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.button-primary:hover:not(:disabled) {
+    background-color: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: var(--box-shadow-hover);
+}
+
+.button-secondary {
+    background-color: white;
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
+}
+
+.button-secondary:hover:not(:disabled) {
+    background-color: var(--primary-light);
+    transform: translateY(-2px);
+}
+
+.button-danger {
+    background-color: var(--error-color);
+    color: white;
+}
+
+.button-danger:hover:not(:disabled) {
+    background-color: #c92a2a;
+    transform: translateY(-2px);
+}
+
+.button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Для кнопок с иконками */
+.button svg, .button i {
+    margin-right: 8px;
+}
+
+.loading-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 24px 0;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(84, 105, 212, 0.2);
+    border-radius: 50%;
+    border-top-color: var(--primary-color);
+    animation: spin 1s ease-in-out infinite;
+    margin-bottom: 16px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading-text {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}

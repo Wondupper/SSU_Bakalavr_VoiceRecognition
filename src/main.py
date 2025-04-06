@@ -1,4 +1,4 @@
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, redirect
 from backend.api.routes import api_bp
 import os
 
@@ -16,6 +16,10 @@ def serve_frontend(path):
     if path == "":
         return send_from_directory(os.path.join(basedir, 'frontend/home'), 'index.html')
     
+    # Перенаправление устаревшего пути /common.js на новый
+    if path == "common.js":
+        return redirect("/common/common.js")
+    
     # CSS и JavaScript файлы для разных разделов
     if path.endswith('.css') or path.endswith('.js'):
         directory, filename = os.path.split(path)
@@ -28,9 +32,9 @@ def serve_frontend(path):
     # Для всех остальных путей возвращаем главную страницу
     return send_from_directory(os.path.join(basedir, 'frontend/home'), 'index.html')
 
-@app.route('/common.js')
-def serve_common_js():
-    return send_from_directory(os.path.join(basedir, 'frontend'), 'common.js')
+@app.route('/common/<path:filename>')
+def serve_common_files(filename):
+    return send_from_directory(os.path.join(basedir, 'frontend/common'), filename)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

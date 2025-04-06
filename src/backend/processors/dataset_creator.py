@@ -102,6 +102,5 @@ def extract_features(audio_data, sr=16000):
         return features
     except Exception as e:
         error_message = f"Ошибка при извлечении признаков: {str(e)}"
-        print(error_message)  # Оставляем для отладки
         error_logger.log_error(error_message, "processing", "dataset_creator")
         raise

@@ -100,7 +100,6 @@ def change_speed(audio_data, speed_factor):
         return librosa.effects.time_stretch(audio_data, rate=speed_factor)
     except Exception as e:
         error_message = f"Ошибка при изменении скорости: {str(e)}"
-        print(error_message)  # Оставляем для отладки
         error_logger.log_error(error_message, "processing", "augmentation")
         return audio_data
 
@@ -129,6 +128,5 @@ def change_pitch(audio_data, n_steps, sr=16000):
         return librosa.effects.pitch_shift(audio_data, sr=sr, n_steps=n_steps)
     except Exception as e:
         error_message = f"Ошибка при изменении высоты тона: {str(e)}"
-        print(error_message)  # Оставляем для отладки
         error_logger.log_error(error_message, "processing", "augmentation")
         return audio_data

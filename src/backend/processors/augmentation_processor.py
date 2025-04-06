@@ -7,42 +7,59 @@ def augment_audio(audio_fragments):
     Аугментация аудиофрагментов в соответствии с требованиями
     Возвращает расширенный набор аудиофрагментов
     """
-    augmented_fragments = []
-    
-    # Шаг 1: Добавляем исходные фрагменты
-    augmented_fragments.extend(audio_fragments)
+    # Шаг 1: Исходные фрагменты
+    result_fragments = []
+    result_fragments.extend(audio_fragments)
     
     # Шаг 2: Удаление шума (группа A)
     denoised_fragments = [remove_noise(fragment) for fragment in audio_fragments]
-    augmented_fragments.extend(denoised_fragments)
+    result_fragments.extend(denoised_fragments)
     
-    # Создаем копии всех фрагментов для последующих преобразований
-    step1_fragments = augmented_fragments.copy()
+    # Набор после шагов 1-2
+    step1_2_fragments = result_fragments.copy()
     
     # Шаг 3: Ускорение записи (группа B)
+    group_b_fragments = []
     for speed in [1.1, 1.2, 1.3, 1.4, 1.5]:
-        speed_fragments = [change_speed(fragment, speed) for fragment in step1_fragments]
-        augmented_fragments.extend(speed_fragments)
+        speed_fragments = [change_speed(fragment, speed) for fragment in step1_2_fragments]
+        group_b_fragments.extend(speed_fragments)
     
     # Шаг 4: Замедление записи (группа C)
+    group_c_fragments = []
     for speed in [0.9, 0.8, 0.7]:
-        speed_fragments = [change_speed(fragment, speed) for fragment in step1_fragments]
-        augmented_fragments.extend(speed_fragments)
+        speed_fragments = [change_speed(fragment, speed) for fragment in step1_2_fragments]
+        group_c_fragments.extend(speed_fragments)
     
-    # Создаем копии всех фрагментов для последующих преобразований
-    step4_fragments = augmented_fragments.copy()
+    # Объединяем результаты шагов 1-4
+    result_fragments.extend(group_b_fragments)
+    result_fragments.extend(group_c_fragments)
     
-    # Шаг 5: Изменение тональности (группа D)
+    # Набор после шагов 1-4 (для группы D)
+    steps_1_4_fragments = result_fragments.copy()
+    
+    # Шаг 5: Изменение тональности вверх (группа D) - применяется ко всему набору
+    group_d_fragments = []
     for pitch_shift in [1, 2]:
-        pitch_fragments = [change_pitch(fragment, pitch_shift) for fragment in step4_fragments]
-        augmented_fragments.extend(pitch_fragments)
+        pitch_fragments = [change_pitch(fragment, pitch_shift) for fragment in steps_1_4_fragments]
+        group_d_fragments.extend(pitch_fragments)
     
-    # Шаг 6: Изменение тональности (группа E)
+    # Шаг 6: Изменение тональности вниз (группа E) - применяется к набору 1-3
+    # Для этого создаем набор 1-3 (исходные + шум + ускорение + замедление)
+    steps_1_3_fragments = []
+    steps_1_3_fragments.extend(step1_2_fragments)
+    steps_1_3_fragments.extend(group_b_fragments)
+    steps_1_3_fragments.extend(group_c_fragments)
+    
+    group_e_fragments = []
     for pitch_shift in [-1, -2]:
-        pitch_fragments = [change_pitch(fragment, pitch_shift) for fragment in step1_fragments]
-        augmented_fragments.extend(pitch_fragments)
+        pitch_fragments = [change_pitch(fragment, pitch_shift) for fragment in steps_1_3_fragments]
+        group_e_fragments.extend(pitch_fragments)
     
-    return augmented_fragments
+    # Объединяем все результаты
+    result_fragments.extend(group_d_fragments)
+    result_fragments.extend(group_e_fragments)
+    
+    return result_fragments
 
 def remove_noise(audio_data):
     """

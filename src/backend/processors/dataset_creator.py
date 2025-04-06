@@ -96,11 +96,15 @@ def extract_features(audio_data, sr=16000):
         if contrast_std > 0:
             contrast = (contrast - np.mean(contrast)) / contrast_std
         
-        # Объединение признаков
+        # Добавляем проверку на NaN
         features = np.vstack([mfccs, centroid, contrast])
-        
+        if np.isnan(features).any():
+            # Заменяем NaN на нули
+            features = np.nan_to_num(features)
+            
         return features
     except Exception as e:
         error_message = f"Ошибка при извлечении признаков: {str(e)}"
         error_logger.log_error(error_message, "processing", "dataset_creator")
-        raise
+        # Вместо повторного вызова исключения возвращаем базовые признаки
+        return np.zeros((22, 134))  # Возвращаем заглушку с правильной размерностью

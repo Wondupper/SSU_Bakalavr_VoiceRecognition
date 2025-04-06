@@ -60,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .catch(error => {
             showLoading(false);
             showStatus(modelType, 'Ошибка сервера: ' + error.message, 'error');
+            logErrorToSystem(error.message, "panel_reset", "panel");
         });
     }
     
@@ -87,6 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
         .catch(error => {
             showLoading(false);
             showStatus(modelType, 'Ошибка сервера: ' + error.message, 'error');
+            logErrorToSystem(error.message, "panel_save", "panel");
         });
     }
     
@@ -95,10 +97,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Создаем объект FormData для отправки файла
         const formData = new FormData();
         formData.append('model_file', file);
+        formData.append('model_type', modelType);  // Добавляем тип модели в данные формы
         
         showLoading(true);
         
-        // Сначала загружаем файл на сервер
+        // Загружаем файл на сервер в соответствующую директорию
         fetch('/api/panel/upload_model', {
             method: 'POST',
             body: formData
@@ -134,12 +137,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 .catch(error => {
                     showLoading(false);
                     showStatus(modelType, 'Ошибка сервера: ' + error.message, 'error');
+                    logErrorToSystem(error.message, "panel_load", "panel");
                 });
             }
         })
         .catch(error => {
             showLoading(false);
             showStatus(modelType, 'Ошибка загрузки файла: ' + error.message, 'error');
+            logErrorToSystem(error.message, "panel_load", "panel");
         });
     }
     
@@ -155,3 +160,6 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingIndicator.style.display = show ? 'block' : 'none';
     }
 });
+
+// Удаляем эту функцию, так как она уже определена в common.js
+// window.logErrorToSystem = function(error, module = "frontend", location = window.location.pathname) { ... }

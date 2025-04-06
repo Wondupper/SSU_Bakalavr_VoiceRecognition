@@ -14,6 +14,10 @@ def process_audio(audio_file):
     Принимает объект FileStorage и возвращает обработанные аудиоданные
     """
     try:
+        # Проверка объекта файла
+        if not audio_file:
+            raise ValueError("Аудиофайл не предоставлен")
+        
         # Сохраняем позицию файла, чтобы вернуть к ней в конце
         original_position = audio_file.tell()
         
@@ -23,8 +27,20 @@ def process_audio(audio_file):
         # Возвращаем файл в исходное положение
         audio_file.seek(original_position)
         
-        # Загрузка аудио в память
-        audio_data, sr = librosa.load(BytesIO(audio_bytes), sr=SAMPLE_RATE)
+        # Проверка размера файла
+        if len(audio_bytes) == 0:
+            raise ValueError("Пустой аудиофайл")
+        
+        # Проверка формата файла
+        file_extension = os.path.splitext(audio_file.filename)[1].lower()
+        if file_extension not in ['.wav', '.mp3', '.ogg', '.flac']:
+            raise ValueError(f"Неподдерживаемый формат аудиофайла: {file_extension}. Поддерживаемые форматы: WAV, MP3, OGG, FLAC")
+        
+        try:
+            # Загрузка аудио в память
+            audio_data, sr = librosa.load(BytesIO(audio_bytes), sr=SAMPLE_RATE)
+        except Exception as load_error:
+            raise ValueError(f"Не удалось декодировать аудиофайл: {str(load_error)}")
         
         # Проверка на пустое аудио
         if len(audio_data) == 0:
@@ -46,11 +62,7 @@ def process_audio(audio_file):
     except Exception as e:
         # Логирование ошибки
         error_message = f"Ошибка обработки аудио: {str(e)}"
-        
-        # Добавляем ошибку в логгер
         error_logger.log_error(error_message, "audio", "audio_processor")
-        
-        # Повторно вызываем исключение, чтобы оно могло быть обработано на уровне API
         raise ValueError(error_message)
 
 def remove_noise(audio_data):
@@ -80,8 +92,16 @@ def remove_silence(audio_data, sr):
     """
     Удаление тишины из аудиоданных
     """
+    # Проверка на пустые данные
+    if len(audio_data) == 0:
+        return audio_data
+        
     # Детектирование тишины с помощью энергетического порога
-    intervals = librosa.effects.split(audio_data, top_db=20)
+    try:
+        intervals = librosa.effects.split(audio_data, top_db=20)
+    except Exception as e:
+        error_logger.log_error(f"Ошибка при разделении аудио: {str(e)}", "audio", "remove_silence")
+        return audio_data
     
     # Если интервалы не обнаружены, возвращаем исходный сигнал
     if len(intervals) == 0:
@@ -92,11 +112,15 @@ def remove_silence(audio_data, sr):
     for interval in intervals:
         non_silent_audio.extend(audio_data[interval[0]:interval[1]])
     
+    # Проверка наличия аудио после удаления тишины
+    if len(non_silent_audio) == 0:
+        return audio_data  # Если после удаления тишины ничего не осталось, вернем исходный сигнал
+    
     return np.array(non_silent_audio)
 
 def split_audio(audio_data, sr):
     """
-    Разделение аудио на фрагменты фиксированной длины
+    Разделение аудио на фрагменты фиксированной длины с перекрытием
     """
     # Проверка на пустые или некорректные данные
     if audio_data is None or len(audio_data) == 0:
@@ -105,25 +129,45 @@ def split_audio(audio_data, sr):
     # Расчет размера фрагмента в отсчетах
     fragment_size = int(AUDIO_FRAGMENT_LENGTH * sr)
     
-    # Проверка длины аудио
+    # Если аудио слишком короткое, дополняем тишиной
     if len(audio_data) < fragment_size:
-        # Если аудио короче минимальной длины фрагмента, но все же подходящей длины
-        # для обработки, дополним его тишиной до нужного размера
         if len(audio_data) >= 1024:  # Минимальный размер для обработки
             padding = np.zeros(fragment_size - len(audio_data))
             padded_audio = np.concatenate([audio_data, padding])
             return [padded_audio]
         return []
     
-    # Получение количества полных фрагментов
-    num_fragments = len(audio_data) // fragment_size
+    # Добавляем перекрытие для лучшего захвата признаков
+    hop_size = fragment_size // 2  # 50% перекрытие
     
-    # Разделение на фрагменты
+    # Получение количества фрагментов с учетом перекрытия
+    num_fragments = max(1, (len(audio_data) - fragment_size) // hop_size + 1)
+    
+    # Разделение на фрагменты с перекрытием
     fragments = []
     for i in range(num_fragments):
-        start = i * fragment_size
-        end = (i + 1) * fragment_size
-        fragment = audio_data[start:end]
+        start = i * hop_size
+        end = min(start + fragment_size, len(audio_data))  # Защита от выхода за границы
+        
+        # Проверка, что фрагмент достаточной длины
+        if end - start >= fragment_size * 0.75:  # Не менее 75% от нужной длины
+            fragment = audio_data[start:end]
+            
+            # Если фрагмент короче fragment_size, дополняем его нулями
+            if len(fragment) < fragment_size:
+                padding = np.zeros(fragment_size - len(fragment))
+                fragment = np.concatenate([fragment, padding])
+            
+            fragments.append(fragment)
+    
+    # Проверка на наличие результатов
+    if not fragments and len(audio_data) >= fragment_size * 0.5:
+        # Если фрагменты не выделены, но аудио не совсем короткое
+        # Берем первый фрагмент и дополняем его при необходимости
+        fragment = audio_data[:min(fragment_size, len(audio_data))]
+        if len(fragment) < fragment_size:
+            padding = np.zeros(fragment_size - len(fragment))
+            fragment = np.concatenate([fragment, padding])
         fragments.append(fragment)
     
     return fragments

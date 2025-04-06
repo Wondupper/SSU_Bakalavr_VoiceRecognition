@@ -13,27 +13,33 @@ document.addEventListener('DOMContentLoaded', () => {
     let audioFile = null;
     let targetEmotion = null;
     
-    // Выбор случайной эмоции
-    function selectRandomEmotion() {
-        const emotions = ['гнев', 'радость', 'грусть'];
-        targetEmotion = emotions[Math.floor(Math.random() * emotions.length)];
-        
-        // Устанавливаем текст эмоции на странице
-        if (targetEmotionElement) {
-            targetEmotionElement.textContent = targetEmotion;
-        } else {
-            // Используем функцию из common.js вместо прямого обращения к error_logger
-            logErrorToSystem('Элемент с id "target-emotion" не найден', "UI", "identification");
-        }
+    // Запрашиваем эмоцию дня с сервера вместо случайной генерации
+    function fetchDailyEmotion() {
+        fetch('/api/daily_emotion')
+            .then(response => response.json())
+            .then(data => {
+                targetEmotion = data.emotion;
+                
+                // Устанавливаем текст эмоции на странице
+                if (targetEmotionElement) {
+                    targetEmotionElement.textContent = targetEmotion;
+                    targetEmotionElement.classList.add('fade-in');
+                } else {
+                    logErrorToSystem('Элемент с id "target-emotion" не найден', "UI", "identification");
+                }
+            })
+            .catch(error => {
+                logErrorToSystem('Ошибка получения эмоции дня: ' + error.message, "API", "identification");
+                // Запасной вариант - используем "радость" по умолчанию
+                targetEmotion = "радость";
+                if (targetEmotionElement) {
+                    targetEmotionElement.textContent = targetEmotion;
+                }
+            });
     }
     
-    // Сразу выбираем эмоцию при загрузке страницы
-    selectRandomEmotion();
-    
-    // Анимация появления эмоции
-    if (targetEmotionElement) {
-        targetEmotionElement.classList.add('fade-in');
-    }
+    // Сразу запрашиваем эмоцию при загрузке страницы
+    fetchDailyEmotion();
     
     // Обработчик выбора файла
     audioFileInput.addEventListener('change', (e) => {
@@ -59,9 +65,6 @@ document.addEventListener('DOMContentLoaded', () => {
         audioPreviewContainer.style.display = 'none';
         audioPreview.src = '';
         submitButton.disabled = true;
-        
-        // При сбросе файла выбираем новую случайную эмоцию
-        selectRandomEmotion();
     });
     
     // Обработчик отправки формы
@@ -70,6 +73,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Функция отправки формы
     function submitForm() {
         if (!audioFile) {
+            return;
+        }
+        
+        // Добавляем проверку размера файла
+        if (audioFile.size > 20 * 1024 * 1024) { // 20MB максимум
+            showResult('Ошибка: Размер файла превышает 20МБ', 'error');
             return;
         }
         
@@ -101,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             // Обработка результата
-            const userName = data.user_name;
+            const userName = data.user;
             const emotionMatch = data.emotion_match;
             
             // Проверка условий успешной идентификации
@@ -118,16 +127,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 if (!emotionMatch) {
-                    errorMessage += `Эмоция в аудиозаписи не соответствует заданной (${targetEmotion}). `;
-                    errorMessage += `Обнаруженная эмоция: ${data.detected_emotion}`;
+                    errorMessage += `Эмоция в аудиозаписи не соответствует заданной (${targetEmotion}).`;
+                    
+                    // Более четкое отображение информации об эмоциях
+                    if (data.error_emotion) {
+                        errorMessage += ` ${data.error_emotion}.`;
+                    } else if (data.detected_emotion) {
+                        errorMessage += ` Обнаруженная эмоция: ${data.detected_emotion}.`;
+                    }
                 }
                 
                 showResult(errorMessage, 'error');
                 document.body.classList.add('error');
             }
-            
-            // После идентификации выбираем новую случайную эмоцию для следующей попытки
-            selectRandomEmotion();
         })
         .catch(error => {
             loadingIndicator.style.display = 'none';

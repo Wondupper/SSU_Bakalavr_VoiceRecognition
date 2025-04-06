@@ -1,10 +1,21 @@
 // Глобальный статус для отслеживания обучения моделей
 let isModelTraining = false;
 
+// Переменная для отслеживания статуса интервалов
+let intervals = {
+    statusCheck: null,
+    errorCheck: null
+};
+
 // Проверка статуса моделей каждые 5 секунд
 function checkModelStatus() {
     fetch('/api/status')
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Ошибка HTTP: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             const wasTraining = isModelTraining;
             isModelTraining = data.voice_id_training || data.emotion_training;
@@ -15,13 +26,20 @@ function checkModelStatus() {
                     showTrainingOverlay();
                 } else {
                     hideTrainingOverlay();
+                    
+                    // После завершения обучения показываем уведомление
+                    const message = "Обучение модели успешно завершено!";
+                    showNotification(message, "success");
                 }
             }
             
             // Обновляем информацию о тренировке
             updateTrainingInfo(data);
         })
-        .catch(error => logErrorToSystem(error.message || "Ошибка проверки статуса", "status_checker"));
+        .catch(error => {
+            // Не выводим ошибку в консоль, только логируем
+            logErrorToSystem(error.message || "Ошибка проверки статуса", "status_checker");
+        });
 }
 
 // Показать оверлей блокировки при обучении
@@ -114,79 +132,98 @@ function unblockNavigation() {
     });
 }
 
-// Добавляем стили для оверлея
-document.addEventListener('DOMContentLoaded', () => {
-    const style = document.createElement('style');
-    style.textContent = `
-        .training-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.8);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        
-        .training-content {
-            background-color: white;
-            padding: 2rem;
-            border-radius: 10px;
-            text-align: center;
-        }
-        
-        .spinner {
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid #3498db;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 2s linear infinite;
-            margin: 20px auto;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .training-info {
-            margin-top: 15px;
-            font-style: italic;
-        }
-    `;
-    document.head.appendChild(style);
+// Функция для инициализации всех интервалов
+function initIntervals() {
+    // Очищаем существующие интервалы перед созданием новых
+    clearAllIntervals();
     
-    // Сохраняем идентификаторы интервалов для возможности их очистки
-    let statusCheckIntervalId = null;
-    let errorCheckIntervalId = null;
+    // Запускаем проверку статуса моделей
+    intervals.statusCheck = setInterval(checkModelStatus, 5000);
     
-    // Функция для очистки интервалов при уходе со страницы
-    const clearAllIntervals = () => {
-        if (statusCheckIntervalId) clearInterval(statusCheckIntervalId);
-        if (errorCheckIntervalId) clearInterval(errorCheckIntervalId);
-    };
-    
-    // Добавляем обработчик, который очистит интервалы при уходе со страницы
-    window.addEventListener('beforeunload', clearAllIntervals);
-    
-    // Запускаем периодическую проверку статуса
-    statusCheckIntervalId = setInterval(checkModelStatus, 5000);
-    
-    // Добавляем проверку ошибок на странице админа
+    // Запускаем проверку ошибок на странице администратора
     if (window.location.pathname === '/panel') {
         const errorContainer = document.getElementById('system-errors');
         if (errorContainer) {
-            // Запускаем периодическую проверку ошибок
-            errorCheckIntervalId = setInterval(() => checkSystemErrors(errorContainer), 10000);
-            
-            // И проверяем сразу при загрузке страницы
+            intervals.errorCheck = setInterval(() => checkSystemErrors(errorContainer), 10000);
+            // Выполняем проверку сразу при загрузке
             checkSystemErrors(errorContainer);
         }
     }
+}
+
+// Функция для очистки всех интервалов
+function clearAllIntervals() {
+    // Очищаем интервал проверки статуса
+    if (intervals.statusCheck) {
+        clearInterval(intervals.statusCheck);
+        intervals.statusCheck = null;
+    }
+    
+    // Очищаем интервал проверки ошибок
+    if (intervals.errorCheck) {
+        clearInterval(intervals.errorCheck);
+        intervals.errorCheck = null;
+    }
+}
+
+// Добавляем стили для оверлея только если их еще нет
+document.addEventListener('DOMContentLoaded', () => {
+    if (!checkBrowserCompatibility()) {
+        return; // Останавливаем инициализацию при несовместимости
+    }
+    
+    if (!document.getElementById('common-overlay-styles')) {
+        const style = document.createElement('style');
+        style.id = 'common-overlay-styles';
+        style.textContent = `
+            .training-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.8);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000;
+            }
+            
+            .training-content {
+                background-color: white;
+                padding: 2rem;
+                border-radius: 10px;
+                text-align: center;
+            }
+            
+            .spinner {
+                border: 5px solid #f3f3f3;
+                border-top: 5px solid #3498db;
+                border-radius: 50%;
+                width: 50px;
+                height: 50px;
+                animation: spin 2s linear infinite;
+                margin: 20px auto;
+            }
+            
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+            
+            .training-info {
+                margin-top: 15px;
+                font-style: italic;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    // Инициализируем интервалы
+    initIntervals();
+    
+    // Добавляем обработчик для очистки интервалов при уходе со страницы
+    window.addEventListener('beforeunload', clearAllIntervals);
 });
 
 // Функция для проверки системных ошибок
@@ -221,7 +258,7 @@ function checkSystemErrors(displayElement = null) {
 
 // Определяем глобальную функцию логирования ошибок
 window.logErrorToSystem = function(error, module = "frontend", location = window.location.pathname) {
-    // Попытка отправить ошибку на сервер, если это возможно
+    // Попытка отправить ошибку на сервер
     try {
         fetch('/api/errors/log', {
             method: 'POST',
@@ -246,3 +283,75 @@ window.onerror = function(message, source, lineno, colno, error) {
     logErrorToSystem(message, "global", source + ":" + lineno);
     return false;
 };
+
+// Функция для отображения уведомлений
+function showNotification(message, type = "info") {
+    // Проверяем, существует ли уже контейнер для уведомлений
+    let notificationContainer = document.getElementById('notification-container');
+    
+    if (!notificationContainer) {
+        // Создаем контейнер для уведомлений
+        notificationContainer = document.createElement('div');
+        notificationContainer.id = 'notification-container';
+        notificationContainer.style.position = 'fixed';
+        notificationContainer.style.top = '20px';
+        notificationContainer.style.right = '20px';
+        notificationContainer.style.zIndex = '9999';
+        document.body.appendChild(notificationContainer);
+    }
+    
+    // Создаем уведомление
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.innerHTML = message;
+    
+    // Добавляем стили
+    notification.style.backgroundColor = type === 'success' ? '#4CAF50' : 
+                                        type === 'error' ? '#f44336' : 
+                                        '#2196F3';
+    notification.style.color = 'white';
+    notification.style.padding = '15px 20px';
+    notification.style.marginBottom = '10px';
+    notification.style.borderRadius = '5px';
+    notification.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+    notification.style.opacity = '0';
+    notification.style.transition = 'opacity 0.3s ease';
+    
+    // Добавляем уведомление в контейнер
+    notificationContainer.appendChild(notification);
+    
+    // Отображаем уведомление с анимацией
+    setTimeout(() => {
+        notification.style.opacity = '1';
+    }, 10);
+    
+    // Скрываем и удаляем уведомление через 5 секунд
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.addEventListener('transitionend', function() {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        });
+    }, 5000);
+}
+
+// Определяем, поддерживает ли браузер необходимые функции
+function checkBrowserCompatibility() {
+    const features = {
+        fetch: typeof fetch !== 'undefined',
+        promises: typeof Promise !== 'undefined',
+        audioApi: typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined'
+    };
+    
+    // Проверяем совместимость
+    const incompatibleFeatures = Object.keys(features).filter(key => !features[key]);
+    
+    if (incompatibleFeatures.length > 0) {
+        const message = `Ваш браузер не поддерживает следующие необходимые функции: ${incompatibleFeatures.join(', ')}. Пожалуйста, обновите браузер или используйте другой.`;
+        alert(message);
+        return false;
+    }
+    
+    return true;
+}

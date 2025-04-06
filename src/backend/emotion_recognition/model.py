@@ -20,35 +20,44 @@ class EmotionRecognitionModel:
     
     def _create_model(self):
         """
-        Создание модели TDNN (Time Delay Neural Network) для распознавания эмоций
+        Создание модели TDNN для распознавания эмоций
         """
-        # Размер входных данных (примерно, будет адаптирован под реальные данные)
-        input_shape = (None, 22)  # 20 MFCC + 2 доп. признака
-        
-        # Создание модели TDNN
+        # Исправление размерности входных данных
+        input_shape = (None, 134)  # Корректируем размерность
         inputs = layers.Input(shape=input_shape)
         
-        # Первый свёрточный слой с расширенной свёрткой
+        # Последовательные слои свертки с расширенной дилатацией
+        # Это позволит захватить более широкий контекст
         x = layers.Conv1D(filters=64, kernel_size=3, padding='same', activation='relu', dilation_rate=1)(inputs)
         x = layers.BatchNormalization()(x)
+        x = layers.Dropout(0.2)(x)
         
-        # Второй свёрточный слой с расширенной свёрткой
-        x = layers.Conv1D(filters=64, kernel_size=3, padding='same', activation='relu', dilation_rate=2)(x)
+        x = layers.Conv1D(filters=128, kernel_size=3, padding='same', activation='relu', dilation_rate=2)(x)
         x = layers.BatchNormalization()(x)
+        x = layers.Dropout(0.2)(x)
         
-        # Третий свёрточный слой с расширенной свёрткой
         x = layers.Conv1D(filters=128, kernel_size=3, padding='same', activation='relu', dilation_rate=4)(x)
         x = layers.BatchNormalization()(x)
+        
+        # Добавляем параллельные пути обработки для разных временных масштабов
+        y = layers.Conv1D(filters=64, kernel_size=5, padding='same', activation='relu')(inputs)
+        y = layers.BatchNormalization()(y)
+        y = layers.MaxPooling1D(pool_size=2)(y)
+        
+        # Объединяем пути
+        x = layers.Concatenate()([x, y])
         
         # Глобальный пулинг
         x = layers.GlobalAveragePooling1D()(x)
         
         # Полносвязные слои
+        x = layers.Dense(256, activation='relu')(x)
+        x = layers.Dropout(0.4)(x)
         x = layers.Dense(128, activation='relu')(x)
-        x = layers.Dropout(0.5)(x)
+        x = layers.Dropout(0.3)(x)
         
         # Выходной слой (3 класса: гнев, радость, грусть)
-        outputs = layers.Dense(3, activation='softmax')(x)
+        outputs = layers.Dense(len(self.emotion_labels), activation='softmax')(x)
         
         # Инициализация модели
         self.model = models.Model(inputs=inputs, outputs=outputs)
@@ -67,26 +76,73 @@ class EmotionRecognitionModel:
         # Проверка наличия данных
         if not dataset:
             raise ValueError("Пустой датасет")
-        
-        # Извлечение признаков и меток из датасета
-        features = np.array([item['features'] for item in dataset])
+
+        # Проверка меток эмоций
         labels = [item['label'] for item in dataset]
-        
-        # Проверка, что все метки содержатся в списке допустимых эмоций
         invalid_labels = [label for label in labels if label not in self.emotion_labels]
         if invalid_labels:
             raise ValueError(f"Недопустимые метки эмоций: {invalid_labels}. Допустимые: {self.emotion_labels}")
+
+        # Стандартизация размеров признаков перед обработкой
+        max_feature_shape = None
+        for item in dataset:
+            features = item['features']
+            if max_feature_shape is None or features.shape[1] > max_feature_shape:
+                max_feature_shape = features.shape[1]
+        
+        # Приведение всех признаков к одинаковой размерности
+        processed_features = []
+        
+        for item in dataset:
+            features = item['features']
+            # Если размер меньше максимального, заполним нулями
+            if features.shape[1] < max_feature_shape:
+                padded = np.zeros((features.shape[0], max_feature_shape))
+                padded[:, :features.shape[1]] = features
+                processed_features.append(padded)
+            else:
+                processed_features.append(features)
+        
+        # Преобразование в numpy-массивы
+        features = np.array(processed_features)
         
         # Преобразование текстовых меток в числовые
         numeric_labels = np.array([self.emotion_labels.index(label) for label in labels])
         
-        # Обучение модели
-        self.model.fit(
+        # Создаем callbacks для мониторинга обучения
+        callbacks = [
+            tf.keras.callbacks.EarlyStopping(
+                monitor='accuracy',
+                patience=5,
+                restore_best_weights=True
+            ),
+            tf.keras.callbacks.ReduceLROnPlateau(
+                monitor='loss',
+                factor=0.5,
+                patience=2
+            )
+        ]
+        
+        # Обучение модели с адаптивным размером батча
+        history = self.model.fit(
             features, numeric_labels,
-            epochs=10,
-            batch_size=32,
-            validation_split=0.2
+            epochs=20,
+            batch_size=max(1, min(32, len(dataset) // 4)),
+            callbacks=callbacks,
+            verbose=1
         )
+        
+        # Логируем результаты обучения
+        try:
+            final_loss = history.history['loss'][-1]
+            final_accuracy = history.history['accuracy'][-1]
+            error_logger.log_error(
+                f"Обучение модели эмоций завершено. Loss: {final_loss:.4f}, Accuracy: {final_accuracy:.4f}",
+                "training",
+                "emotion_recognition"
+            )
+        except (KeyError, IndexError):
+            pass
         
         self.is_trained = True
     
@@ -96,41 +152,63 @@ class EmotionRecognitionModel:
         """
         # Проверка, что модель обучена
         if not self.is_trained:
-            return "unknown"
+            raise ValueError("Модель не обучена")
+        
+        # Проверка, что метки эмоций определены
+        if not self.emotion_labels:
+            self.emotion_labels = ['гнев', 'радость', 'грусть']  # Устанавливаем дефолтные значения
         
         # Проверка на наличие фрагментов
-        if not audio_fragments:
-            return "unknown"
+        if not audio_fragments or len(audio_fragments) == 0:
+            raise ValueError("Отсутствуют аудиофрагменты для анализа")
         
+        # Извлечение признаков из каждого фрагмента
+        features_list = []
+        for fragment in audio_fragments:
+            features = extract_features(fragment)
+            features_list.append(features)
+        
+        # Проверка на наличие признаков после извлечения
+        if not features_list or len(features_list) == 0:
+            raise ValueError("Не удалось извлечь признаки из аудиофрагментов")
+        
+        # Среднее значение признаков по всем фрагментам
+        avg_features = np.mean(features_list, axis=0)
+        
+        # Проверка размерности
+        if len(avg_features.shape) != 2:
+            raise ValueError(f"Неверная размерность признаков: {avg_features.shape}")
+            
+        # Проверка и исправление размерности признаков
+        expected_shape = (None, 134)
+        if avg_features.shape[1] != expected_shape[1]:
+            if avg_features.shape[1] < expected_shape[1]:
+                # Если признаков меньше, дополняем нулями
+                padded = np.zeros((avg_features.shape[0], expected_shape[1]))
+                padded[:, :avg_features.shape[1]] = avg_features
+                avg_features = padded
+            else:
+                # Если признаков больше, обрезаем
+                avg_features = avg_features[:, :expected_shape[1]]
+        
+        # Подготовка входных данных для модели
+        input_data = np.expand_dims(avg_features, axis=0)
+        
+        # Предсказание класса
         try:
-            # Извлечение признаков из каждого фрагмента
-            features_list = []
-            for fragment in audio_fragments:
-                features = extract_features(fragment)
-                features_list.append(features)
-            
-            # Среднее значение признаков по всем фрагментам
-            avg_features = np.mean(features_list, axis=0)
-            
-            # Изменение формы для подачи в модель
-            input_data = np.expand_dims(avg_features, axis=0)
-            
-            # Предсказание класса
+            predictions = self.model.predict(input_data, verbose=0)
+        except TypeError:
             predictions = self.model.predict(input_data)
-            predicted_class = np.argmax(predictions[0])
-            
-            # Проверка, что predicted_class находится в пределах допустимого диапазона
-            if predicted_class < 0 or predicted_class >= len(self.emotion_labels):
-                return "unknown"
-            
-            # Возвращение названия эмоции
-            return self.emotion_labels[predicted_class]
-        except Exception as e:
-            error_message = f"Ошибка при предсказании эмоции: {str(e)}"
-            # Логируем ошибку
-            error_logger.log_error(error_message, "model", "emotion_recognition")
-            
-            return "unknown"
+        
+        predicted_class = np.argmax(predictions[0])
+        
+        # Проверка индекса класса
+        if predicted_class < 0 or predicted_class >= len(self.emotion_labels):
+            # Если индекс за пределами допустимых значений, возвращаем дефолтную эмоцию
+            return self.emotion_labels[0]  # Возвращаем первую эмоцию как дефолтную
+        
+        # Возвращение названия эмоции - всегда возвращаем одну из эмоций
+        return self.emotion_labels[predicted_class]
     
     def reset(self):
         """
@@ -144,7 +222,7 @@ class EmotionRecognitionModel:
         Сохранение модели в файл
         """
         if not os.path.exists(self.model_dir):
-            os.makedirs(self.model_dir)
+            os.makedirs(self.model_dir, exist_ok=True)
         
         timestamp = int(time.time())
         model_path = os.path.join(self.model_dir, f'emotion_model_{timestamp}')
@@ -155,7 +233,8 @@ class EmotionRecognitionModel:
         # Сохранение дополнительных данных
         with open(f'{model_path}_metadata.pkl', 'wb') as f:
             pickle.dump({
-                'is_trained': self.is_trained
+                'is_trained': self.is_trained,
+                'emotion_labels': self.emotion_labels  # Добавляем сохранение меток
             }, f)
         
         return model_path
@@ -171,3 +250,6 @@ class EmotionRecognitionModel:
         with open(f'{path}_metadata.pkl', 'rb') as f:
             metadata = pickle.load(f)
             self.is_trained = metadata['is_trained']
+            # Загружаем метки эмоций, если они есть
+            if 'emotion_labels' in metadata:
+                self.emotion_labels = metadata['emotion_labels']

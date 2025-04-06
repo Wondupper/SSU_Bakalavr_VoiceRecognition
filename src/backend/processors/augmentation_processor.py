@@ -1,5 +1,6 @@
 import numpy as np
 import librosa
+from backend.api.error_logger import error_logger
 
 def augment_audio(audio_fragments):
     """
@@ -46,15 +47,24 @@ def augment_audio(audio_fragments):
 def remove_noise(audio_data):
     """
     Удаление шума из аудиоданных (группа A)
-    Реализация та же, что и в audio_processor.py
     """
+    # Проверка на пустые данные
+    if len(audio_data) == 0:
+        return audio_data
+    
     # Расчет спектрограммы
     stft = librosa.stft(audio_data)
     mag = np.abs(stft)
     phase = np.angle(stft)
     
     # Оценка шумового порога (предполагаем, что первые 100 мс это шум)
-    noise_idx = int(100 * 16000 / 1000 / (2048 // 4))
+    # Обеспечиваем, что noise_idx >= 1, чтобы избежать проблем с пустыми аудио
+    noise_idx = max(1, int(100 * 16000 / 1000 / (2048 // 4)))
+    
+    # Если аудио короче noise_idx кадров, используем первую треть
+    if mag.shape[1] <= noise_idx:
+        noise_idx = max(1, mag.shape[1] // 3)
+    
     noise_profile = np.mean(mag[:, :noise_idx], axis=1, keepdims=True)
     
     # Спектральное вычитание
@@ -69,13 +79,56 @@ def remove_noise(audio_data):
 def change_speed(audio_data, speed_factor):
     """
     Изменение скорости аудиоданных (группы B и C)
+    
+    Args:
+        audio_data: аудиоданные для изменения
+        speed_factor: коэффициент изменения скорости
+    
+    Returns:
+        Аудиоданные с измененной скоростью
     """
-    # Изменение скорости с сохранением длины
-    return librosa.effects.time_stretch(audio_data, rate=speed_factor)
+    try:
+        # Проверка на пустые данные
+        if len(audio_data) == 0:
+            return audio_data
+            
+        # Проверка на минимальную длину аудио
+        if len(audio_data) < 1024:  # Минимальный размер для корректной работы librosa
+            return audio_data
+            
+        # Изменение скорости с сохранением длины
+        return librosa.effects.time_stretch(audio_data, rate=speed_factor)
+    except Exception as e:
+        error_message = f"Ошибка при изменении скорости: {str(e)}"
+        print(error_message)  # Оставляем для отладки
+        error_logger.log_error(error_message, "processing", "augmentation")
+        return audio_data
 
-def change_pitch(audio_data, n_steps):
+def change_pitch(audio_data, n_steps, sr=16000):
     """
     Изменение высоты тона аудиоданных (группы D и E)
+    
+    Args:
+        audio_data: аудиоданные для изменения
+        n_steps: количество полутонов для сдвига
+        sr: частота дискретизации (по умолчанию 16000)
+    
+    Returns:
+        Аудиоданные с измененной высотой тона
     """
-    # Изменение высоты тона
-    return librosa.effects.pitch_shift(audio_data, sr=16000, n_steps=n_steps)
+    try:
+        # Проверка на пустые данные
+        if len(audio_data) == 0:
+            return audio_data
+            
+        # Проверка на минимальную длину аудио
+        if len(audio_data) < 1024:  # Минимальный размер для корректной работы librosa
+            return audio_data
+            
+        # Изменение высоты тона
+        return librosa.effects.pitch_shift(audio_data, sr=sr, n_steps=n_steps)
+    except Exception as e:
+        error_message = f"Ошибка при изменении высоты тона: {str(e)}"
+        print(error_message)  # Оставляем для отладки
+        error_logger.log_error(error_message, "processing", "augmentation")
+        return audio_data

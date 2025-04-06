@@ -61,43 +61,6 @@ label {
     font-weight: 500;
 }
 
-.emotion-selector {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    margin-bottom: 15px;
-}
-
-.emotion-button {
-    flex: 1;
-    padding: 12px;
-    border: 2px solid #ddd;
-    border-radius: 5px;
-    background-color: #f5f7fa;
-    cursor: pointer;
-    font-size: 16px;
-    font-weight: 500;
-    transition: all 0.3s;
-}
-
-.emotion-button:hover {
-    background-color: #e8eaed;
-    border-color: #4a6fa5;
-}
-
-.emotion-button.active {
-    background-color: #4a6fa5;
-    color: white;
-    border-color: #4a6fa5;
-}
-
-.selected-emotion {
-    margin-top: 10px;
-    font-size: 14px;
-    color: #666;
-    font-style: italic;
-}
-
 .file-upload {
     position: relative;
     display: inline-block;
@@ -253,8 +216,30 @@ audio {
         display: block;
         margin-bottom: 20px;
     }
-    
-    .emotion-selector {
-        flex-direction: column;
-    }
+}
+
+select {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 16px;
+    background-color: #fff;
+    cursor: pointer;
+    transition: border-color 0.3s;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z' fill='%23444'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+}
+
+select:focus {
+    border-color: #4a6fa5;
+    outline: none;
+}
+
+select option {
+    padding: 10px;
 }

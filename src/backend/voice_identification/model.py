@@ -3,14 +3,19 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models, optimizers
 import pickle
-import json
+import time
+from backend.processors.dataset_creator import extract_features
+from backend.api.error_logger import error_logger
 
 class VoiceIdentificationModel:
     def __init__(self):
         self.model = None
         self.user_labels = []
         self.is_trained = False
-        self.model_dir = os.path.join('..', 'models', 'voice_identification')
+        # Используем абсолютные пути относительно корня проекта
+        self.model_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'models', 'voice_identification')
+        if not os.path.exists(self.model_dir):
+            os.makedirs(self.model_dir, exist_ok=True)
         self._create_model()
     
     def _create_model(self):
@@ -42,8 +47,9 @@ class VoiceIdentificationModel:
         x = layers.Dense(128, activation='relu')(x)
         x = layers.Dropout(0.5)(x)
         
-        # Выходной слой (будет меняться в зависимости от количества пользователей)
-        outputs = layers.Dense(1, activation='softmax')(x)
+        # Выходной слой (изначально для одного класса, будет обновлен при добавлении пользователей)
+        # Исправляем кол-во классов из 1 на более адекватное (хотя бы 2)
+        outputs = layers.Dense(2, activation='softmax')(x)
         
         # Инициализация модели
         self.model = models.Model(inputs=inputs, outputs=outputs)
@@ -124,24 +130,44 @@ class VoiceIdentificationModel:
         if not audio_fragments:
             return "unknown"
         
-        # Извлечение признаков из аудиофрагментов
-        features = np.array([extract_features(fragment) for fragment in audio_fragments])
-        
-        # Получение предсказаний для всех фрагментов
-        predictions = self.model.predict(features)
-        
-        # Усреднение предсказаний
-        avg_prediction = np.mean(predictions, axis=0)
-        
-        # Определение наиболее вероятного класса
-        predicted_class = np.argmax(avg_prediction)
-        
-        # Если вероятность ниже порога, вернуть "unknown"
-        if avg_prediction[predicted_class] < 0.7:
+        if not self.user_labels:
             return "unknown"
         
-        # Возвращение имени пользователя
-        return self.user_labels[predicted_class]
+        try:
+            # Извлечение признаков из аудиофрагментов
+            features = np.array([extract_features(fragment) for fragment in audio_fragments])
+            
+            # Проверка на наличие признаков после извлечения
+            if features.size == 0:
+                return "unknown"
+            
+            # Получение предсказаний для всех фрагментов
+            predictions = self.model.predict(features)
+            
+            # Усреднение предсказаний
+            avg_prediction = np.mean(predictions, axis=0)
+            
+            # Определение наиболее вероятного класса
+            predicted_class = np.argmax(avg_prediction)
+            
+            # Проверка, что predicted_class находится в пределах допустимого диапазона
+            if predicted_class < 0 or predicted_class >= len(self.user_labels):
+                return "unknown"
+            
+            # Если вероятность ниже порога, вернуть "unknown"
+            if avg_prediction[predicted_class] < 0.7:
+                return "unknown"
+            
+            # Возвращение имени пользователя
+            return self.user_labels[predicted_class]
+        except Exception as e:
+            error_message = f"Ошибка при предсказании: {str(e)}"
+            print(error_message)  # Оставляем для отладки
+            
+            # Логируем ошибку
+            error_logger.log_error(error_message, "model", "voice_identification")
+            
+            return "unknown"
     
     def reset(self):
         """

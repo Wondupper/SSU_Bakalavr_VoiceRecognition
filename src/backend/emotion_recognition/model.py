@@ -4,14 +4,18 @@ import tensorflow as tf
 from tensorflow.keras import layers, models, optimizers
 import pickle
 import time
-import librosa
+from backend.processors.dataset_creator import extract_features
+from backend.api.error_logger import error_logger
 
 class EmotionRecognitionModel:
     def __init__(self):
         self.model = None
         self.emotion_labels = ['гнев', 'радость', 'грусть']
         self.is_trained = False
-        self.model_dir = os.path.join('..', 'models', 'emotion_recognition')
+        # Используем абсолютные пути относительно корня проекта
+        self.model_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'models', 'emotion_recognition')
+        if not os.path.exists(self.model_dir):
+            os.makedirs(self.model_dir, exist_ok=True)
         self._create_model()
     
     def _create_model(self):
@@ -68,6 +72,11 @@ class EmotionRecognitionModel:
         features = np.array([item['features'] for item in dataset])
         labels = [item['label'] for item in dataset]
         
+        # Проверка, что все метки содержатся в списке допустимых эмоций
+        invalid_labels = [label for label in labels if label not in self.emotion_labels]
+        if invalid_labels:
+            raise ValueError(f"Недопустимые метки эмоций: {invalid_labels}. Допустимые: {self.emotion_labels}")
+        
         # Преобразование текстовых меток в числовые
         numeric_labels = np.array([self.emotion_labels.index(label) for label in labels])
         
@@ -91,20 +100,37 @@ class EmotionRecognitionModel:
         if not audio_fragments:
             return "unknown"
         
-        # Извлечение признаков из аудиофрагментов
-        features = np.array([extract_features(fragment) for fragment in audio_fragments])
-        
-        # Получение предсказаний для всех фрагментов
-        predictions = self.model.predict(features)
-        
-        # Усреднение предсказаний
-        avg_prediction = np.mean(predictions, axis=0)
-        
-        # Определение наиболее вероятного класса
-        predicted_class = np.argmax(avg_prediction)
-        
-        # Возвращение названия эмоции
-        return self.emotion_labels[predicted_class]
+        try:
+            # Извлечение признаков из аудиофрагментов
+            features = np.array([extract_features(fragment) for fragment in audio_fragments])
+            
+            # Проверка на наличие признаков после извлечения
+            if features.size == 0:
+                return "unknown"
+            
+            # Получение предсказаний для всех фрагментов
+            predictions = self.model.predict(features)
+            
+            # Усреднение предсказаний
+            avg_prediction = np.mean(predictions, axis=0)
+            
+            # Определение наиболее вероятного класса
+            predicted_class = np.argmax(avg_prediction)
+            
+            # Проверка, что predicted_class находится в пределах допустимого диапазона
+            if predicted_class < 0 or predicted_class >= len(self.emotion_labels):
+                return "unknown"
+            
+            # Возвращение названия эмоции
+            return self.emotion_labels[predicted_class]
+        except Exception as e:
+            error_message = f"Ошибка при предсказании эмоции: {str(e)}"
+            print(error_message)  # Оставляем для отладки
+            
+            # Логируем ошибку
+            error_logger.log_error(error_message, "model", "emotion_recognition")
+            
+            return "unknown"
     
     def reset(self):
         """
@@ -145,28 +171,3 @@ class EmotionRecognitionModel:
         with open(f'{path}_metadata.pkl', 'rb') as f:
             metadata = pickle.load(f)
             self.is_trained = metadata['is_trained']
-
-def extract_features(audio_data, sr=16000):
-    """
-    Извлечение признаков из аудиоданных для обучения нейронной сети
-    """
-    # Извлечение MFCC (мел-кепстральных коэффициентов)
-    mfccs = librosa.feature.mfcc(y=audio_data, sr=sr, n_mfcc=20)
-    
-    # Нормализация признаков
-    mfccs = (mfccs - np.mean(mfccs)) / np.std(mfccs)
-    
-    # Добавление дополнительных признаков
-    
-    # Спектральный центроид
-    centroid = librosa.feature.spectral_centroid(y=audio_data, sr=sr)
-    centroid = (centroid - np.mean(centroid)) / np.std(centroid)
-    
-    # Спектральная контрастность
-    contrast = librosa.feature.spectral_contrast(y=audio_data, sr=sr)
-    contrast = (contrast - np.mean(contrast)) / np.std(contrast)
-    
-    # Объединение признаков
-    features = np.vstack([mfccs, centroid, contrast])
-    
-    return features

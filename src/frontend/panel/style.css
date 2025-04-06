@@ -192,3 +192,38 @@ h2 {
         flex-direction: column;
     }
 }
+
+.system-errors-container {
+    margin-top: 30px;
+    padding: 15px;
+    background-color: #fff5f5;
+    border: 1px solid #ffebeb;
+    border-radius: 5px;
+    display: none;
+}
+
+.system-errors h4 {
+    color: #e53e3e;
+    margin-bottom: 10px;
+}
+
+.error-item {
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #ffe0e0;
+}
+
+.error-time {
+    color: #666;
+    font-size: 0.8em;
+    margin-right: 10px;
+}
+
+.error-module {
+    font-weight: bold;
+    color: #c53030;
+}
+
+.error-message {
+    color: #333;
+}

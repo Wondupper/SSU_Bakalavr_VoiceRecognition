@@ -21,9 +21,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Устанавливаем текст эмоции на странице
         if (targetEmotionElement) {
             targetEmotionElement.textContent = targetEmotion;
-            console.log('Эмоция установлена:', targetEmotion);
         } else {
-            console.error('Элемент с id "target-emotion" не найден');
+            // Используем функцию из common.js вместо прямого обращения к error_logger
+            logErrorToSystem('Элемент с id "target-emotion" не найден', "UI", "identification");
         }
     }
     
@@ -31,7 +31,9 @@ document.addEventListener('DOMContentLoaded', () => {
     selectRandomEmotion();
     
     // Анимация появления эмоции
-    targetEmotionElement.classList.add('fade-in');
+    if (targetEmotionElement) {
+        targetEmotionElement.classList.add('fade-in');
+    }
     
     // Обработчик выбора файла
     audioFileInput.addEventListener('change', (e) => {
@@ -83,8 +85,6 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('audio', audioFile);
         formData.append('expected_emotion', targetEmotion);
         
-        console.log('Отправляемая эмоция:', targetEmotion);
-        
         // Отправляем запрос на сервер
         fetch('/api/identify', {
             method: 'POST',
@@ -133,6 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loadingIndicator.style.display = 'none';
             showResult('Ошибка сервера: ' + error.message, 'error');
             document.body.classList.add('error');
+            logErrorToSystem(error, "api_request", "identification");
         });
     }
     

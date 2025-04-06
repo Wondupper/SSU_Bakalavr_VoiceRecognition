@@ -1,4 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
+    const emotionSelect = document.getElementById('emotion');
     const audioFileInput = document.getElementById('audio-file');
     const fileNameDisplay = document.getElementById('file-name');
     const audioPreviewContainer = document.getElementById('audio-preview-container');
@@ -9,6 +10,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingIndicator = document.getElementById('loading-indicator');
     
     let audioFile = null;
+    
+    // Обработчик выбора эмоции
+    emotionSelect.addEventListener('change', validateForm);
     
     // Обработчик выбора файла
     audioFileInput.addEventListener('change', (e) => {
@@ -22,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
             audioPreview.src = audioURL;
             audioPreviewContainer.style.display = 'block';
             
-            submitButton.disabled = false;
+            validateForm();
         }
     });
     
@@ -33,16 +37,24 @@ document.addEventListener('DOMContentLoaded', () => {
         fileNameDisplay.textContent = '';
         audioPreviewContainer.style.display = 'none';
         audioPreview.src = '';
-        submitButton.disabled = true;
+        validateForm();
     });
     
     // Обработчик отправки формы
     submitButton.addEventListener('click', submitForm);
     
+    // Функция проверки валидности формы
+    function validateForm() {
+        const emotion = emotionSelect.value;
+        submitButton.disabled = !(emotion && audioFile);
+    }
+    
     // Функция отправки формы
     function submitForm() {
-        if (!audioFile) {
-            showStatus('Загрузите аудиофайл', 'error');
+        const emotion = emotionSelect.value;
+        
+        if (!emotion || !audioFile) {
+            showStatus('Выберите эмоцию и загрузите аудиофайл', 'error');
             return;
         }
         
@@ -54,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Создаем объект FormData для отправки данных
         const formData = new FormData();
         formData.append('audio', audioFile);
+        formData.append('emotion', emotion);
         
         // Отправляем запрос на сервер
         fetch('/api/em_training', {
@@ -69,6 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 showStatus(data.message, 'success');
                 // Сбрасываем форму после успешной отправки
+                emotionSelect.value = '';
                 resetButton.click();
             }
         })

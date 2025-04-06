@@ -8,6 +8,7 @@ from backend.processors.audio_processor import process_audio
 from backend.processors.dataset_creator import create_voice_id_dataset, create_emotion_dataset
 from backend.voice_identification.model import VoiceIdentificationModel
 from backend.emotion_recognition.model import EmotionRecognitionModel
+from backend.api.error_logger import error_logger
 
 api_bp = Blueprint('api', __name__)
 
@@ -56,18 +57,22 @@ def em_training():
     """
     Эндпоинт для обучения модели распознавания эмоций
     """
-    if 'audio' not in request.files:
-        return jsonify({'error': 'Аудиофайл обязателен'}), 400
+    if 'audio' not in request.files or 'emotion' not in request.form:
+        return jsonify({'error': 'Аудиофайл и эмоция обязательны'}), 400
     
     audio_file = request.files['audio']
+    emotion = request.form['emotion']
     
     if audio_file.filename == '':
         return jsonify({'error': 'Файл не выбран'}), 400
     
+    if emotion not in ['гнев', 'радость', 'грусть']:
+        return jsonify({'error': 'Неверная эмоция. Допустимые: гнев, радость, грусть'}), 400
+    
     # Обработка и подготовка данных
     try:
         processed_audio = process_audio(audio_file)
-        dataset = create_emotion_dataset(processed_audio)  # Убираем параметр emotion
+        dataset = create_emotion_dataset(processed_audio, emotion)
         
         # Проверка блокировки модели и запуск обучения
         if emotion_model_lock.acquire(blocking=False):
@@ -192,6 +197,10 @@ def load_model():
     if model_type not in ['voice_id', 'emotion'] or not file_path:
         return jsonify({'error': 'Неверный тип модели или путь'}), 400
     
+    # Проверка существования файла
+    if not os.path.exists(f'{file_path}.h5') or not os.path.exists(f'{file_path}_metadata.pkl'):
+        return jsonify({'error': 'Файл модели не найден'}), 404
+    
     try:
         if model_type == 'voice_id':
             if voice_id_model_lock.acquire(blocking=False):
@@ -213,6 +222,125 @@ def load_model():
                 return jsonify({'error': 'Модель используется. Попробуйте позже'}), 429
     except Exception as e:
         return jsonify({'error': f'Ошибка загрузки модели: {str(e)}'}), 500
+
+@api_bp.route('/status', methods=['GET'])
+def get_status():
+    """
+    Эндпоинт для проверки статуса моделей
+    """
+    # Проверяем статус обучения, используя безопасный способ
+    # Если блокировка не может быть получена, значит модель в процессе обучения
+    voice_id_status = False
+    emotion_status = False
+    
+    try:
+        voice_id_status = voice_id_model_lock.acquire(blocking=False)
+    except:
+        pass
+    finally:
+        if voice_id_status:
+            voice_id_model_lock.release()
+    
+    try:
+        emotion_status = emotion_model_lock.acquire(blocking=False)
+    except:
+        pass
+    finally:
+        if emotion_status:
+            emotion_model_lock.release()
+    
+    return jsonify({
+        'voice_id_training': not voice_id_status,
+        'emotion_training': not emotion_status
+    }), 200
+
+@api_bp.route('/panel/upload_model', methods=['POST'])
+def upload_model():
+    """
+    Загрузка файла модели на сервер
+    """
+    if 'model_file' not in request.files:
+        return jsonify({'error': 'Файл модели не найден'}), 400
+    
+    model_file = request.files['model_file']
+    
+    if model_file.filename == '':
+        return jsonify({'error': 'Файл не выбран'}), 400
+    
+    # Проверка расширения файла
+    if not model_file.filename.endswith('.h5') and not model_file.filename.endswith('.pkl'):
+        return jsonify({'error': 'Неверный формат файла. Допустимые: .h5, .pkl'}), 400
+    
+    try:
+        # Создаем временную директорию для загрузки, если она не существует
+        upload_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'models', 'uploads')
+        if not os.path.exists(upload_dir):
+            os.makedirs(upload_dir, exist_ok=True)
+        
+        # Создаем безопасное имя файла
+        filename = secure_filename(model_file.filename)
+        timestamp = int(time.time())
+        safe_filename = f"{timestamp}_{filename}"
+        
+        # Полный путь к файлу
+        file_path = os.path.join(upload_dir, safe_filename)
+        
+        # Сохраняем файл
+        model_file.save(file_path)
+        
+        # Возвращаем путь без расширения для последующей загрузки
+        base_path = file_path.rsplit('.', 1)[0] if '.' in file_path else file_path
+        
+        return jsonify({
+            'message': 'Файл успешно загружен',
+            'file_path': base_path
+        }), 200
+    except Exception as e:
+        return jsonify({'error': f'Ошибка загрузки файла: {str(e)}'}), 500
+
+@api_bp.route('/errors', methods=['GET'])
+def get_errors():
+    """
+    Получение последних ошибок системы
+    """
+    # Получаем параметр limit из query string, по умолчанию 10
+    limit = request.args.get('limit', 10, type=int)
+    
+    # Получаем последние ошибки
+    errors = error_logger.get_recent_errors(limit)
+    
+    return jsonify({
+        'errors': errors
+    }), 200
+
+@api_bp.route('/errors/clear', methods=['POST'])
+def clear_errors():
+    """
+    Очистка списка ошибок
+    """
+    error_logger.clear_errors()
+    return jsonify({'message': 'Список ошибок очищен'}), 200
+
+@api_bp.route('/errors/log', methods=['POST'])
+def log_error():
+    """
+    Логирование ошибок с фронтенда
+    """
+    data = request.json
+    if not data or 'message' not in data:
+        return jsonify({'error': 'Неверный формат данных'}), 400
+    
+    message = data.get('message')
+    module = data.get('module', 'frontend')
+    location = data.get('location', 'unknown')
+    
+    error_logger.log_error(
+        f"Фронтенд ошибка ({location}): {message}", 
+        "frontend", 
+        module
+    )
+    
+    return jsonify({'success': True}), 200
 
 def train_voice_id_model(dataset):
     """

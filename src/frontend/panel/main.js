@@ -92,29 +92,54 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Функция загрузки модели
     function loadModel(modelType, file) {
+        // Создаем объект FormData для отправки файла
         const formData = new FormData();
         formData.append('model_file', file);
-        formData.append('model_type', modelType);
         
         showLoading(true);
         
-        fetch('/api/panel/load_model', {
+        // Сначала загружаем файл на сервер
+        fetch('/api/panel/upload_model', {
             method: 'POST',
             body: formData
         })
         .then(response => response.json())
         .then(data => {
-            showLoading(false);
-            
             if (data.error) {
+                showLoading(false);
                 showStatus(modelType, data.error, 'error');
             } else {
-                showStatus(modelType, data.message, 'success');
+                // Если загрузка успешна, вызываем API загрузки модели с путем к файлу
+                const filePath = data.file_path;
+                
+                fetch('/api/panel/load_model', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model_type: modelType,
+                        file_path: filePath
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    showLoading(false);
+                    if (data.error) {
+                        showStatus(modelType, data.error, 'error');
+                    } else {
+                        showStatus(modelType, data.message, 'success');
+                    }
+                })
+                .catch(error => {
+                    showLoading(false);
+                    showStatus(modelType, 'Ошибка сервера: ' + error.message, 'error');
+                });
             }
         })
         .catch(error => {
             showLoading(false);
-            showStatus(modelType, 'Ошибка сервера: ' + error.message, 'error');
+            showStatus(modelType, 'Ошибка загрузки файла: ' + error.message, 'error');
         });
     }
     

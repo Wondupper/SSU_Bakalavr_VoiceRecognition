@@ -1,8 +1,8 @@
 import os
 import numpy as np
 import librosa
-import soundfile as sf
 from io import BytesIO
+from backend.api.error_logger import error_logger
 
 # Константы
 AUDIO_FRAGMENT_LENGTH = 3  # длина фрагмента в секундах
@@ -13,20 +13,46 @@ def process_audio(audio_file):
     Основная функция обработки аудиофайла
     Принимает объект FileStorage и возвращает обработанные аудиоданные
     """
-    # Чтение аудиофайла из объекта FileStorage
-    audio_bytes = audio_file.read()
-    
-    # Загрузка аудио в память
-    audio_data, sr = librosa.load(BytesIO(audio_bytes), sr=SAMPLE_RATE)
-    
-    # Удаление шума и тишины
-    audio_data = remove_noise(audio_data)
-    audio_data = remove_silence(audio_data, sr)
-    
-    # Разделение на фрагменты
-    audio_fragments = split_audio(audio_data, sr)
-    
-    return audio_fragments
+    try:
+        # Сохраняем позицию файла, чтобы вернуть к ней в конце
+        original_position = audio_file.tell()
+        
+        # Чтение аудиофайла из объекта FileStorage
+        audio_bytes = audio_file.read()
+        
+        # Возвращаем файл в исходное положение
+        audio_file.seek(original_position)
+        
+        # Загрузка аудио в память
+        audio_data, sr = librosa.load(BytesIO(audio_bytes), sr=SAMPLE_RATE)
+        
+        # Проверка на пустое аудио
+        if len(audio_data) == 0:
+            raise ValueError("Аудиофайл пуст или поврежден")
+        
+        # Удаление шума и тишины
+        audio_data = remove_noise(audio_data)
+        audio_data = remove_silence(audio_data, sr)
+        
+        # Разделение на фрагменты
+        audio_fragments = split_audio(audio_data, sr)
+        
+        # Проверка, что получены хотя бы какие-то фрагменты
+        if not audio_fragments:
+            raise ValueError("Не удалось извлечь аудиофрагменты подходящей длины")
+        
+        return audio_fragments
+        
+    except Exception as e:
+        # Логирование ошибки
+        error_message = f"Ошибка обработки аудио: {str(e)}"
+        print(error_message)  # Сохраняем вывод в консоль для отладки
+        
+        # Добавляем ошибку в логгер
+        error_logger.log_error(error_message, "audio", "audio_processor")
+        
+        # Повторно вызываем исключение, чтобы оно могло быть обработано на уровне API
+        raise ValueError(error_message)
 
 def remove_noise(audio_data):
     """
@@ -73,6 +99,10 @@ def split_audio(audio_data, sr):
     """
     Разделение аудио на фрагменты фиксированной длины
     """
+    # Проверка на пустые данные
+    if len(audio_data) == 0:
+        return []
+    
     # Расчет размера фрагмента в отсчетах
     fragment_size = int(AUDIO_FRAGMENT_LENGTH * sr)
     

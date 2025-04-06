@@ -28,5 +28,9 @@ def serve_frontend(path):
     # Для всех остальных путей возвращаем главную страницу
     return send_from_directory(os.path.join(basedir, 'frontend/home'), 'index.html')
 
+@app.route('/common.js')
+def serve_common_js():
+    return send_from_directory(os.path.join(basedir, 'frontend'), 'common.js')
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

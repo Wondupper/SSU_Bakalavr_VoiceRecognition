@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Обучение модели распознавания эмоций</title>
-    <link rel="stylesheet" href="/training/style.css">
+    <link rel="stylesheet" href="/emtraining/style.css">
 </head>
 <body>
     <div class="container">
@@ -13,6 +13,16 @@
         <a href="/" class="back-button">← На главную</a>
         
         <div class="form-container">
+            <div class="form-group">
+                <label for="emotion">Выберите эмоцию:</label>
+                <select id="emotion" required>
+                    <option value="" disabled selected>Выберите эмоцию</option>
+                    <option value="гнев">Гнев</option>
+                    <option value="радость">Радость</option>
+                    <option value="грусть">Грусть</option>
+                </select>
+            </div>
+            
             <div class="form-group">
                 <label for="audio-file">Аудиозапись для обучения модели:</label>
                 <div class="file-upload">
@@ -41,6 +51,7 @@
         </div>
     </div>
     
-    <script src="/training/main.js"></script>
+    <script src="/emtraining/main.js"></script>
+    <script src="/common.js"></script>
 </body>
 </html>

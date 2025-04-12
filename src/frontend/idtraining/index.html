@@ -18,7 +18,7 @@
     <link rel="stylesheet" href="/common/animations.css">
     
     <!-- Стили специфичные для страницы -->
-    <link rel="stylesheet" href="/training/style.css">
+    <link rel="stylesheet" href="/idtraining/style.css">
 </head>
 <body>
     <div class="container">
@@ -53,6 +53,21 @@
             <button id="submit-button" class="button button-primary" disabled>Отправить на обучение</button>
         </div>
         
+        <div class="panel-section">
+            <h2>Управление моделью идентификации</h2>
+            
+            <div class="action-buttons">
+                <button id="reset-voice-model" class="action-button danger">Сбросить модель</button>
+                <button id="save-voice-model" class="action-button primary">Сохранить модель</button>
+                <div class="file-upload-wrapper">
+                    <button class="action-button secondary">Загрузить модель</button>
+                    <input type="file" id="load-voice-model" class="file-input" accept=".zip,.h5,.pkl">
+                </div>
+            </div>
+            
+            <div id="voice-model-status" class="status-message"></div>
+        </div>
+        
         <div id="status-message" class="status-message"></div>
         <div id="loading-indicator" class="loading-indicator" style="display: none;">
             <div class="spinner"></div>
@@ -61,6 +76,6 @@
     </div>
     
     <script src="/common/common.js"></script>
-    <script src="/training/main.js"></script>
+    <script src="/idtraining/main.js"></script>
 </body>
 </html>

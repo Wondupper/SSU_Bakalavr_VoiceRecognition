@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const emotionSelect = document.getElementById('emotion');
+    const usernameInput = document.getElementById('username');
     const audioFileInput = document.getElementById('audio-file');
     const fileNameDisplay = document.getElementById('file-name');
     const audioPreviewContainer = document.getElementById('audio-preview-container');
@@ -10,36 +10,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingIndicator = document.getElementById('loading-indicator');
     
     // Элементы управления моделью
-    const resetEmotionModelBtn = document.getElementById('reset-emotion-model');
-    const saveEmotionModelBtn = document.getElementById('save-emotion-model');
-    const loadEmotionModelInput = document.getElementById('load-emotion-model');
-    const emotionModelStatus = document.getElementById('emotion-model-status');
+    const resetVoiceModelBtn = document.getElementById('reset-voice-model');
+    const saveVoiceModelBtn = document.getElementById('save-voice-model');
+    const loadVoiceModelInput = document.getElementById('load-voice-model');
+    const voiceModelStatus = document.getElementById('voice-model-status');
     
     let audioFile = null;
     
-    // Обработчики для управления моделью
-    resetEmotionModelBtn.addEventListener('click', () => resetModel('emotion'));
-    saveEmotionModelBtn.addEventListener('click', () => saveModel('emotion'));
-    loadEmotionModelInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-            loadModel('emotion', e.target.files[0]);
-        }
-    });
-    
-    // Обработчик изменения эмоции
-    emotionSelect.addEventListener('change', validateForm);
+    // Обработчик изменения имени пользователя
+    usernameInput.addEventListener('input', validateForm);
     
     // Обработчик выбора файла
-    audioFileInput.addEventListener('change', handleFileSelect);
-    
-    // Обработчик сброса файла
-    resetButton.addEventListener('click', resetAudioSelection);
-    
-    // Обработчик отправки формы
-    submitButton.addEventListener('click', submitTrainingData);
-    
-    function handleFileSelect(event) {
-        const file = event.target.files[0];
+    audioFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
         if (file) {
             audioFile = file;
             fileNameDisplay.textContent = file.name;
@@ -51,30 +34,44 @@ document.addEventListener('DOMContentLoaded', () => {
             
             validateForm();
         }
-    }
+    });
     
-    function resetAudioSelection() {
+    // Обработчик сброса файла
+    resetButton.addEventListener('click', () => {
         audioFileInput.value = '';
         audioFile = null;
         fileNameDisplay.textContent = '';
         audioPreviewContainer.style.display = 'none';
         audioPreview.src = '';
         validateForm();
-    }
+    });
     
+    // Обработчик отправки формы
+    submitButton.addEventListener('click', submitForm);
+    
+    // Обработчики для управления моделью
+    resetVoiceModelBtn.addEventListener('click', () => resetModel('voice_id'));
+    saveVoiceModelBtn.addEventListener('click', () => saveModel('voice_id'));
+    loadVoiceModelInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            loadModel('voice_id', e.target.files[0]);
+        }
+    });
+    
+    // Функция проверки валидности формы
     function validateForm() {
-        const emotion = emotionSelect.value;
+        const username = usernameInput.value.trim();
         const hasFile = audioFileInput.files.length > 0;
         
-        submitButton.disabled = !(emotion && hasFile);
+        submitButton.disabled = !(username && hasFile);
     }
     
-    function submitTrainingData() {
-        const emotion = emotionSelect.value;
-        const audioFile = audioFileInput.files[0];
+    // Функция отправки формы
+    function submitForm() {
+        const username = usernameInput.value.trim();
         
-        if (!emotion || !audioFile) {
-            showStatus('Заполните все поля формы', 'error');
+        if (!username || !audioFile) {
+            showStatus('Заполните все поля', 'error');
             return;
         }
         
@@ -85,11 +82,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Создаем объект FormData для отправки данных
         const formData = new FormData();
-        formData.append('emotion', emotion);
+        formData.append('name', username);
         formData.append('audio', audioFile);
         
         // Отправляем запрос на сервер
-        fetch('/api/em_training', {
+        fetch('/api/id_training', {
             method: 'POST',
             body: formData
         })
@@ -105,27 +102,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 startTrainingProgressMonitor();
                 
                 // Сбрасываем форму после успешной отправки
-                emotionSelect.selectedIndex = 0;
-                resetAudioSelection();
+                usernameInput.value = '';
+                resetButton.click();
             }
         })
         .catch(error => {
             loadingIndicator.style.display = 'none';
             showStatus('Ошибка сервера: ' + error.message, 'error');
-            logErrorToSystem(error.message, "em_training_submit", window.location.pathname);
+            logErrorToSystem(error.message, "api_request", "training");
         });
     }
     
     // Функция для мониторинга прогресса обучения
     function startTrainingProgressMonitor() {
-        // Очищаем содержимое индикатора загрузки перед добавлением новых элементов
-        loadingIndicator.innerHTML = '<div class="spinner"></div>';
-        
         // Устанавливаем индикатор загрузки
         const loadingText = document.createElement('p');
-        loadingText.textContent = 'Идет обучение модели распознавания эмоций...';
-        loadingText.style.color = 'white';
-        loadingText.style.marginTop = '15px';
+        loadingText.textContent = 'Идет обучение модели...';
         loadingIndicator.appendChild(loadingText);
         
         // Индикатор прогресса
@@ -155,7 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Запускаем интервал для проверки прогресса
         const progressInterval = setInterval(() => {
-            fetch('/api/training_progress?model_type=emotion')
+            fetch('/api/training_progress?model_type=voice_id')
                 .then(response => response.json())
                 .then(data => {
                     // Обновляем прогресс-бар
@@ -203,28 +195,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 1000);
     }
     
+    // Функция отображения статуса
     function showStatus(message, type) {
         statusMessage.textContent = message;
         statusMessage.className = 'status-message ' + type;
-        
-        // Автоматически скрыть сообщение через 5 секунд
-        setTimeout(() => {
-            statusMessage.textContent = '';
-            statusMessage.className = 'status-message';
-        }, 5000);
-    }
-    
-    function showLoading(show) {
-        loadingIndicator.style.display = show ? 'flex' : 'none';
     }
     
     // Функции управления моделями из панели администрирования
     function resetModel(modelType) {
-        if (!confirm(`Вы уверены, что хотите сбросить модель распознавания эмоций?`)) {
+        if (!confirm(`Вы уверены, что хотите сбросить модель идентификации по голосу?`)) {
             return;
         }
         
-        loadingIndicator.style.display = 'flex';
+        loadingIndicator.style.display = 'block';
         statusMessage.textContent = '';
         statusMessage.className = 'status-message';
         
@@ -253,7 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function saveModel(modelType) {
-        loadingIndicator.style.display = 'flex';
+        loadingIndicator.style.display = 'block';
         statusMessage.textContent = '';
         statusMessage.className = 'status-message';
         
@@ -302,7 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('model_file', file);
         formData.append('model_type', modelType);
         
-        loadingIndicator.style.display = 'flex';
+        loadingIndicator.style.display = 'block';
         statusMessage.textContent = '';
         statusMessage.className = 'status-message';
         
@@ -335,6 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(response => response.json())
             .then(data => {
                 loadingIndicator.style.display = 'none';
+                
                 if (data.error) {
                     showModelStatus(data.error, 'error');
                 } else {
@@ -355,7 +339,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function showModelStatus(message, type) {
-        emotionModelStatus.textContent = message;
-        emotionModelStatus.className = 'status-message ' + type;
+        voiceModelStatus.textContent = message;
+        voiceModelStatus.className = 'status-message ' + type;
     }
 });

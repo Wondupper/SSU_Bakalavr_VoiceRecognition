@@ -61,17 +61,26 @@ def load_saved_models():
 def save_models_on_exit():
     print("Сохранение моделей перед завершением работы...")
     
+    # Сохранение модели идентификации голоса
     try:
         if voice_id_model.is_trained:
-            voice_id_model.save()
-            print("Модель идентификации голоса сохранена")
+            voice_path = voice_id_model.save()
+            print(f"Модель идентификации голоса сохранена в {voice_path}")
+        else:
+            print("Модель идентификации голоса не обучена, сохранение не выполнено")
     except Exception as e:
         print(f"Ошибка при сохранении модели идентификации голоса: {str(e)}")
     
+    # Сохранение модели распознавания эмоций
     try:
+        # Принудительно выводим информацию о состоянии модели для диагностики
+        print(f"Состояние модели эмоций - is_trained: {emotion_model.is_trained}")
+        
         if emotion_model.is_trained:
-            emotion_model.save()
-            print("Модель распознавания эмоций сохранена")
+            emotion_path = emotion_model.save()
+            print(f"Модель распознавания эмоций сохранена в {emotion_path}")
+        else:
+            print("Модель распознавания эмоций не обучена, сохранение не выполнено")
     except Exception as e:
         print(f"Ошибка при сохранении модели распознавания эмоций: {str(e)}")
     
@@ -108,7 +117,7 @@ def serve_frontend(path):
         return send_from_directory(os.path.join(basedir, 'frontend', directory), filename)
     
     # Специальные разделы сайта
-    if path in ['identification', 'training', 'emtraining', 'panel']:
+    if path in ['identification', 'idtraining', 'emtraining']:
         return send_from_directory(os.path.join(basedir, f'frontend/{path}'), 'index.html')
     
     # Для всех остальных путей возвращаем главную страницу
@@ -133,8 +142,23 @@ if __name__ == '__main__':
 
     for directory in [models_dir, voice_models_dir, emotion_models_dir]:
         if not os.path.exists(directory):
-            os.makedirs(directory, exist_ok=True)
-            print(f"Создана директория: {directory}")
+            try:
+                os.makedirs(directory, exist_ok=True)
+                print(f"Создана директория: {directory}")
+            except Exception as e:
+                print(f"Ошибка при создании директории {directory}: {str(e)}")
+                
+    # Проверяем права доступа к директориям
+    for directory in [voice_models_dir, emotion_models_dir]:
+        try:
+            test_file = os.path.join(directory, 'test_write.tmp')
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
+            print(f"Проверка записи в {directory}: ОК")
+        except Exception as e:
+            print(f"ВНИМАНИЕ! Проблема с правами доступа к {directory}: {str(e)}")
+            print("Сохранение моделей может не работать!")
     
     # Загрузка моделей
     print("Запуск сервера. Загрузка сохраненных моделей...")

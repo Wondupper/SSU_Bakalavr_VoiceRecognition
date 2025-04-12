@@ -1,7 +1,6 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 import os
-import json
 import threading
 import time
 import random
@@ -10,6 +9,8 @@ from backend.processors.dataset_creator import create_voice_id_dataset, create_e
 from backend.voice_identification.model import VoiceIdentificationModel
 from backend.emotion_recognition.model import EmotionRecognitionModel
 from backend.api.error_logger import error_logger
+import zipfile
+import io
 
 api_bp = Blueprint('api', __name__)
 
@@ -20,6 +21,26 @@ emotion_model = EmotionRecognitionModel()
 # Блокировка для обучения моделей
 voice_id_model_lock = threading.Lock()
 emotion_model_lock = threading.Lock()
+
+# Переменные для отслеживания прогресса обучения
+training_progress = {
+    'voice_id': {
+        'current_epoch': 0,
+        'total_epochs': 0,
+        'accuracy': 0.0,
+        'loss': 0.0,
+        'start_time': 0,
+        'status': 'idle'  # 'idle', 'training', 'completed', 'error'
+    },
+    'emotion': {
+        'current_epoch': 0,
+        'total_epochs': 0,
+        'accuracy': 0.0,
+        'loss': 0.0,
+        'start_time': 0,
+        'status': 'idle'  # 'idle', 'training', 'completed', 'error'
+    }
+}
 
 # Эмоция дня, которая генерируется один раз при запуске сервера
 EMOTIONS = ['гнев', 'радость', 'грусть']
@@ -160,7 +181,8 @@ def identify():
         
         return jsonify({
             'user': user_name,
-            'emotion_match': emotion_match
+            'emotion_match': emotion_match,
+            'detected_emotion': detected_emotion  # Добавляем обнаруженную эмоцию в ответ
         }), 200
         
     except ValueError as e:
@@ -171,7 +193,7 @@ def identify():
         error_logger.log_error(f"Общая ошибка при идентификации: {str(e)}", "api", "identify")
         return jsonify({'error': f'Ошибка обработки запроса: {str(e)}'}), 500
 
-@api_bp.route('/panel/reset_model', methods=['POST'])
+@api_bp.route('/model/reset', methods=['POST'])
 def reset_model():
     """
     Сброс модели до начального состояния
@@ -203,39 +225,7 @@ def reset_model():
     except Exception as e:
         return jsonify({'error': f'Ошибка сброса модели: {str(e)}'}), 500
 
-@api_bp.route('/panel/save_model', methods=['POST'])
-def save_model():
-    """
-    Сохранение модели в файл
-    """
-    model_type = request.json.get('model_type')
-    
-    if model_type not in ['voice_id', 'emotion']:
-        return jsonify({'error': 'Неверный тип модели'}), 400
-    
-    try:
-        if model_type == 'voice_id':
-            if voice_id_model_lock.acquire(blocking=False):
-                try:
-                    file_path = voice_id_model.save()
-                    return jsonify({'message': f'Модель идентификации голоса успешно сохранена в {file_path}'}), 200
-                finally:
-                    voice_id_model_lock.release()
-            else:
-                return jsonify({'error': 'Модель используется. Попробуйте позже'}), 429
-        else:
-            if emotion_model_lock.acquire(blocking=False):
-                try:
-                    file_path = emotion_model.save()
-                    return jsonify({'message': f'Модель распознавания эмоций успешно сохранена в {file_path}'}), 200
-                finally:
-                    emotion_model_lock.release()
-            else:
-                return jsonify({'error': 'Модель используется. Попробуйте позже'}), 429
-    except Exception as e:
-        return jsonify({'error': f'Ошибка сохранения модели: {str(e)}'}), 500
-
-@api_bp.route('/panel/load_model', methods=['POST'])
+@api_bp.route('/model/load', methods=['POST'])
 def load_model():
     """
     Загрузка модели из файла
@@ -277,38 +267,7 @@ def load_model():
     except Exception as e:
         return jsonify({'error': f'Ошибка загрузки модели: {str(e)}'}), 500
 
-@api_bp.route('/status', methods=['GET'])
-def get_status():
-    """
-    Эндпоинт для проверки статуса моделей
-    """
-    # Проверяем статус обучения, используя безопасный способ
-    # Если блокировка не может быть получена, значит модель в процессе обучения
-    voice_id_status = False
-    emotion_status = False
-    
-    try:
-        voice_id_status = voice_id_model_lock.acquire(blocking=False)
-    except:
-        pass
-    finally:
-        if voice_id_status:
-            voice_id_model_lock.release()
-    
-    try:
-        emotion_status = emotion_model_lock.acquire(blocking=False)
-    except:
-        pass
-    finally:
-        if emotion_status:
-            emotion_model_lock.release()
-    
-    return jsonify({
-        'voice_id_training': not voice_id_status,
-        'emotion_training': not emotion_status
-    }), 200
-
-@api_bp.route('/panel/upload_model', methods=['POST'])
+@api_bp.route('/model/upload', methods=['POST'])
 def upload_model():
     """
     Загрузка файла модели на сервер
@@ -368,6 +327,37 @@ def upload_model():
     except Exception as e:
         return jsonify({'error': f'Ошибка загрузки файла: {str(e)}'}), 500
 
+@api_bp.route('/status', methods=['GET'])
+def get_status():
+    """
+    Эндпоинт для проверки статуса моделей
+    """
+    # Проверяем статус обучения, используя безопасный способ
+    # Если блокировка не может быть получена, значит модель в процессе обучения
+    voice_id_status = False
+    emotion_status = False
+    
+    try:
+        voice_id_status = voice_id_model_lock.acquire(blocking=False)
+    except:
+        pass
+    finally:
+        if voice_id_status:
+            voice_id_model_lock.release()
+    
+    try:
+        emotion_status = emotion_model_lock.acquire(blocking=False)
+    except:
+        pass
+    finally:
+        if emotion_status:
+            emotion_model_lock.release()
+    
+    return jsonify({
+        'voice_id_training': not voice_id_status,
+        'emotion_training': not emotion_status
+    }), 200
+
 @api_bp.route('/errors', methods=['GET'])
 def get_errors():
     """
@@ -419,24 +409,159 @@ def get_daily_emotion():
     """
     return jsonify({'emotion': DAILY_EMOTION}), 200
 
+@api_bp.route('/training_progress', methods=['GET'])
+def get_training_progress():
+    """
+    Эндпоинт для получения прогресса обучения моделей
+    """
+    model_type = request.args.get('model_type', 'all')
+    
+    if model_type == 'all':
+        return jsonify(training_progress), 200
+    elif model_type in ['voice_id', 'emotion']:
+        return jsonify(training_progress[model_type]), 200
+    else:
+        return jsonify({'error': 'Неверный тип модели'}), 400
+
+@api_bp.route('/model/download', methods=['POST'])
+def download_model():
+    """
+    Сохранение модели и отправка файлов пользователю для скачивания
+    """
+    model_type = request.json.get('model_type')
+    
+    if model_type not in ['voice_id', 'emotion']:
+        return jsonify({'error': 'Неверный тип модели'}), 400
+    
+    try:
+        memory_file = io.BytesIO()
+        
+        if model_type == 'voice_id':
+            if voice_id_model_lock.acquire(blocking=False):
+                try:
+                    # Сохраняем модель
+                    file_path = voice_id_model.save()
+                    if not file_path:
+                        return jsonify({'error': 'Модель не обучена или не может быть сохранена'}), 400
+                    
+                    # Создаем zip-архив в памяти
+                    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+                        h5_file = f"{file_path}.h5"
+                        metadata_file = f"{file_path}_metadata.pkl"
+                        
+                        # Добавляем файлы в архив
+                        zf.write(h5_file, os.path.basename(h5_file))
+                        zf.write(metadata_file, os.path.basename(metadata_file))
+                    
+                    # Перемещаем указатель в начало файла для чтения
+                    memory_file.seek(0)
+                    
+                    return send_file(
+                        memory_file,
+                        mimetype='application/zip',
+                        as_attachment=True,
+                        download_name=f'voice_id_model_{int(time.time())}.zip'
+                    )
+                finally:
+                    voice_id_model_lock.release()
+            else:
+                return jsonify({'error': 'Модель используется. Попробуйте позже'}), 429
+        else:  # emotion
+            if emotion_model_lock.acquire(blocking=False):
+                try:
+                    # Сохраняем модель
+                    file_path = emotion_model.save()
+                    if not file_path:
+                        return jsonify({'error': 'Модель не обучена или не может быть сохранена'}), 400
+                    
+                    # Создаем zip-архив в памяти
+                    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+                        h5_file = f"{file_path}.h5"
+                        metadata_file = f"{file_path}_metadata.pkl"
+                        
+                        # Добавляем файлы в архив
+                        zf.write(h5_file, os.path.basename(h5_file))
+                        zf.write(metadata_file, os.path.basename(metadata_file))
+                    
+                    # Перемещаем указатель в начало файла для чтения
+                    memory_file.seek(0)
+                    
+                    return send_file(
+                        memory_file,
+                        mimetype='application/zip',
+                        as_attachment=True,
+                        download_name=f'emotion_model_{int(time.time())}.zip'
+                    )
+                finally:
+                    emotion_model_lock.release()
+            else:
+                return jsonify({'error': 'Модель используется. Попробуйте позже'}), 429
+    except Exception as e:
+        return jsonify({'error': f'Ошибка при скачивании модели: {str(e)}'}), 500
+
 def train_voice_id_model(dataset):
     """
-    Функция для обучения модели идентификации голоса в отдельном потоке
+    Функция для обучения модели идентификации голоса в отдельном потоке с отслеживанием прогресса
     """
     try:
-        voice_id_model.train(dataset)
+        # Устанавливаем начальные значения для отслеживания прогресса
+        training_progress['voice_id']['status'] = 'training'
+        training_progress['voice_id']['current_epoch'] = 0
+        training_progress['voice_id']['total_epochs'] = 100  # Максимальное число эпох
+        training_progress['voice_id']['accuracy'] = 0.0
+        training_progress['voice_id']['loss'] = 0.0
+        training_progress['voice_id']['start_time'] = time.time()
+        
+        # Создаем колбэк для отслеживания прогресса
+        progress_callback = TrainingProgressCallback('voice_id', training_progress)
+        
+        # Обучаем модель с колбэком прогресса
+        voice_id_model.train(dataset, progress_callback=progress_callback)
+        
+        # Устанавливаем статус завершения
+        training_progress['voice_id']['status'] = 'completed'
     except Exception as e:
         error_logger.log_error(f"Ошибка при обучении модели идентификации: {str(e)}", "training", "voice_id")
+        training_progress['voice_id']['status'] = 'error'
     finally:
         voice_id_model_lock.release()  # Всегда освобождаем блокировку
 
 def train_emotion_model(dataset):
     """
-    Функция для обучения модели распознавания эмоций в отдельном потоке
+    Функция для обучения модели распознавания эмоций в отдельном потоке с отслеживанием прогресса
     """
     try:
-        emotion_model.train(dataset)
+        # Устанавливаем начальные значения для отслеживания прогресса
+        training_progress['emotion']['status'] = 'training'
+        training_progress['emotion']['current_epoch'] = 0
+        training_progress['emotion']['total_epochs'] = 100  # Максимальное число эпох
+        training_progress['emotion']['accuracy'] = 0.0
+        training_progress['emotion']['loss'] = 0.0
+        training_progress['emotion']['start_time'] = time.time()
+        
+        # Создаем колбэк для отслеживания прогресса
+        progress_callback = TrainingProgressCallback('emotion', training_progress)
+        
+        # Обучаем модель с колбэком прогресса
+        emotion_model.train(dataset, progress_callback=progress_callback)
+        
+        # Устанавливаем статус завершения
+        training_progress['emotion']['status'] = 'completed'
     except Exception as e:
         error_logger.log_error(f"Ошибка при обучении модели эмоций: {str(e)}", "training", "emotion")
+        training_progress['emotion']['status'] = 'error'
     finally:
         emotion_model_lock.release()  # Всегда освобождаем блокировку
+
+# Класс для колбэка отслеживания прогресса
+class TrainingProgressCallback:
+    def __init__(self, model_type, progress_dict):
+        self.model_type = model_type
+        self.progress_dict = progress_dict
+    
+    def on_epoch_end(self, epoch, logs=None):
+        """Вызывается после каждой эпохи обучения"""
+        logs = logs or {}
+        self.progress_dict[self.model_type]['current_epoch'] = epoch + 1
+        self.progress_dict[self.model_type]['accuracy'] = float(logs.get('accuracy', 0.0))
+        self.progress_dict[self.model_type]['loss'] = float(logs.get('loss', 0.0))

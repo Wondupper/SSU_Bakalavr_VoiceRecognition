@@ -569,6 +569,28 @@ def train_voice_id_model(dataset):
         training_progress['voice_id']['loss'] = 0.0
         training_progress['voice_id']['start_time'] = time.time()
         
+        # Принудительная сборка мусора перед обучением
+        import gc
+        gc.collect()
+        
+        # Логируем размер датасета перед обучением
+        error_logger.log_error(
+            f"Начато обучение модели идентификации. Размер датасета: {len(dataset)} примеров",
+            "training", "voice_id"
+        )
+        
+        # Ограничиваем размер датасета для обучения если он слишком большой 
+        # (для предотвращения исчерпания памяти)
+        MAX_DATASET_SIZE = 500  # Увеличено для полноценного обучения, но с ограничением
+        if len(dataset) > MAX_DATASET_SIZE:
+            # Берем случайную выборку из датасета
+            import random
+            dataset = random.sample(dataset, MAX_DATASET_SIZE)
+            error_logger.log_error(
+                f"Датасет обрезан до {MAX_DATASET_SIZE} элементов для экономии памяти",
+                "training", "voice_id"
+            )
+        
         # Создаем колбэк для отслеживания прогресса
         progress_callback = TrainingProgressCallback('voice_id', training_progress)
         
@@ -577,6 +599,14 @@ def train_voice_id_model(dataset):
         
         # Устанавливаем статус завершения
         training_progress['voice_id']['status'] = 'completed'
+        
+        # Принудительная сборка мусора после обучения
+        gc.collect()
+        
+        error_logger.log_error(
+            "Обучение модели идентификации успешно завершено",
+            "training", "voice_id"
+        )
     except Exception as e:
         exc_type, exc_obj, exc_tb = sys.exc_info()
         fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
@@ -600,6 +630,28 @@ def train_emotion_model(dataset):
         training_progress['emotion']['loss'] = 0.0
         training_progress['emotion']['start_time'] = time.time()
         
+        # Принудительная сборка мусора перед обучением
+        import gc
+        gc.collect()
+        
+        # Логируем размер датасета перед обучением
+        error_logger.log_error(
+            f"Начато обучение модели эмоций. Размер датасета: {len(dataset)} примеров",
+            "training", "emotion"
+        )
+        
+        # Ограничиваем размер датасета для обучения если он слишком большой 
+        # (для предотвращения исчерпания памяти)
+        MAX_DATASET_SIZE = 500  # Увеличено для полноценного обучения, но с ограничением
+        if len(dataset) > MAX_DATASET_SIZE:
+            # Берем случайную выборку из датасета
+            import random
+            dataset = random.sample(dataset, MAX_DATASET_SIZE)
+            error_logger.log_error(
+                f"Датасет обрезан до {MAX_DATASET_SIZE} элементов для экономии памяти",
+                "training", "emotion"
+            )
+        
         # Создаем колбэк для отслеживания прогресса
         progress_callback = TrainingProgressCallback('emotion', training_progress)
         
@@ -608,6 +660,14 @@ def train_emotion_model(dataset):
         
         # Устанавливаем статус завершения
         training_progress['emotion']['status'] = 'completed'
+        
+        # Принудительная сборка мусора после обучения
+        gc.collect()
+        
+        error_logger.log_error(
+            "Обучение модели эмоций успешно завершено",
+            "training", "emotion"
+        )
     except Exception as e:
         exc_type, exc_obj, exc_tb = sys.exc_info()
         fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)

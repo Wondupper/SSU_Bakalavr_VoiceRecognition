@@ -18,8 +18,9 @@ NOISE_PERCENTILE = 10  # Персентиль для определения по
 MIN_GAIN = 0.1  # Минимальный коэффициент усиления
 
 # Определяем оптимальное количество процессов/потоков
-# Оставляем 1 ядро для основных операций системы
-N_JOBS = max(1, multiprocessing.cpu_count() - 1)
+# Ограничиваем максимальное количество процессоров для снижения нагрузки на память
+N_JOBS = max(1, min(2, multiprocessing.cpu_count() - 1))  # Не более 2 процессов
+MAX_MEMORY_PER_PROCESS = 512 * 1024 * 1024  # Максимум 512MB на процесс
 
 def process_audio(audio_file):
     """
@@ -199,7 +200,16 @@ def enhanced_noise_removal(audio_data):
         # Простой и надежный подход к шумоподавлению на основе спектрального вычитания
         
         # Шаг 1: Взять STFT с помощью librosa (надежный способ)
-        D = librosa.stft(audio_data, n_fft=2048, hop_length=512)
+        # Уменьшаем размер n_fft для предотвращения исчерпания памяти
+        n_fft = 1024  # Уменьшено с 2048
+        hop_length = 256  # Уменьшено с 512
+        
+        # Ограничиваем длину аудио для обработки (макс. 10 секунд)
+        max_samples = 10 * SAMPLE_RATE
+        if len(audio_data) > max_samples:
+            audio_data = audio_data[:max_samples]
+        
+        D = librosa.stft(audio_data, n_fft=n_fft, hop_length=hop_length)
         
         # Шаг 2: Получить спектрограмму мощности
         S = np.abs(D) ** 2
@@ -214,7 +224,7 @@ def enhanced_noise_removal(audio_data):
         D_denoised = D * mask[:, np.newaxis]
         
         # Шаг 6: Выполнить обратный STFT для получения очищенного сигнала
-        audio_denoised = librosa.istft(D_denoised, hop_length=512, length=len(audio_data))
+        audio_denoised = librosa.istft(D_denoised, hop_length=hop_length, length=len(audio_data))
         
         # Нормализация до исходной громкости
         if np.max(np.abs(audio_denoised)) > 0:

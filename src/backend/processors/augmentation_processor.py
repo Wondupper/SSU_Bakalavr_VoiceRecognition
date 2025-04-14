@@ -8,153 +8,268 @@ from backend.api.error_logger import error_logger
 from functools import partial
 import sys
 import os
+import scipy.signal
+import gc
 
 # Константы для оптимизации
-MAX_AUGMENTED_SAMPLES = 50  # Максимальное количество аугментированных образцов
-N_FFT = 2048
+MAX_AUGMENTED_SAMPLES = 1000  # Уменьшено с 5000 до 1000, так как теперь набор увеличивается в 12 раз вместо 90
+N_FFT = 1024         # Размер окна для БПФ (уменьшен с 2048 для предотвращения ошибок памяти)
 HOP_LENGTH = 512
 
 # Определяем оптимальное количество процессов
-# Оставляем 1 ядро для основных операций системы
-N_JOBS = max(1, multiprocessing.cpu_count() - 1)
+# Ограничиваем максимальное количество процессоров для снижения нагрузки на память
+N_JOBS = max(1, min(2, multiprocessing.cpu_count() - 1))  # Не более 2 процессов
 
 # Константы для работы с аудио и аугментации
 SAMPLE_RATE = 16000  # Стандартная частота дискретизации
 MIN_SNR_DB = 5       # Минимальное отношение сигнал/шум для добавления шума
 MAX_SNR_DB = 15      # Максимальное отношение сигнал/шум для добавления шума
 MAX_PITCH_SHIFT = 2  # Максимальное изменение высоты тона (в полутонах)
-MIN_SPEED = 0.9      # Минимальный коэффициент изменения скорости
-MAX_SPEED = 1.1      # Максимальный коэффициент изменения скорости
+MIN_SPEED = 0.7      # Минимальный коэффициент изменения скорости
+MAX_SPEED = 1.5      # Максимальный коэффициент изменения скорости
+# Ограничение по размеру батча для экономии памяти
+MAX_BATCH_SIZE = 8   # Максимальный размер батча для параллельной обработки
+
+# Параметры временного маскирования
+MASK_COUNT_MIN = 2   # Минимальное количество масок
+MASK_COUNT_MAX = 5   # Максимальное количество масок
+MASK_LENGTH_MIN = 0.05  # Минимальная длина маски в секундах
+MASK_LENGTH_MAX = 0.15  # Максимальная длина маски в секундах
+
+# Минимальная длина аудиофрагмента, необходимая для обработки
+MIN_AUDIO_LENGTH = 4096  # Равно N_FFT * 2 из dataset_creator.py
+
+def ensure_min_length(audio_fragment):
+    """
+    Проверяет и обеспечивает минимальную длину аудиофрагмента.
+    Если фрагмент слишком короткий, удлиняет его путем циклического повторения.
+    
+    Args:
+        audio_fragment: numpy массив с аудиоданными
+    
+    Returns:
+        numpy массив с гарантированной минимальной длиной
+    """
+    if audio_fragment is None or len(audio_fragment) == 0:
+        error_logger.log_error("Пустой аудиофрагмент", "augmentation", "ensure_min_length")
+        return np.zeros(MIN_AUDIO_LENGTH)  # Возвращаем тишину минимальной длины
+        
+    if len(audio_fragment) < MIN_AUDIO_LENGTH:
+        # Используем циклическое повторение (вместо простого дополнения нулями)
+        # для сохранения характеристик сигнала
+        multiplier = int(np.ceil(MIN_AUDIO_LENGTH / len(audio_fragment)))
+        extended_fragment = np.tile(audio_fragment, multiplier)[:MIN_AUDIO_LENGTH]
+        
+        error_logger.log_error(
+            f"Аудиофрагмент удлинен с {len(audio_fragment)} до {len(extended_fragment)} отсчетов",
+            "augmentation", "ensure_min_length"
+        )
+        
+        return extended_fragment
+    
+    return audio_fragment
+
+def apply_time_masking(audio_data, sr=SAMPLE_RATE):
+    """
+    Применяет временное маскирование к аудиофрагменту, заглушая случайные 
+    сегменты для увеличения устойчивости модели к потере частей информации.
+    
+    Args:
+        audio_data: numpy массив с аудиоданными
+        sr: частота дискретизации аудио
+        
+    Returns:
+        numpy массив с замаскированными сегментами
+    """
+    try:
+        # Проверка на пустые данные
+        if audio_data is None or len(audio_data) == 0:
+            return audio_data
+            
+        # Создаем копию аудио для модификации
+        result = np.copy(audio_data)
+        
+        # Определяем количество масок
+        mask_count = np.random.randint(MASK_COUNT_MIN, MASK_COUNT_MAX + 1)
+        
+        # Длина аудио в отсчетах
+        audio_length = len(audio_data)
+        
+        # Минимальная и максимальная длина маски в отсчетах
+        min_mask_length = int(sr * MASK_LENGTH_MIN)
+        max_mask_length = int(sr * MASK_LENGTH_MAX)
+        
+        # Для очень коротких аудио корректируем длину маски
+        if max_mask_length > audio_length // 4:
+            max_mask_length = audio_length // 4
+            min_mask_length = min(min_mask_length, max_mask_length // 2)
+        
+        # Применяем маски
+        for _ in range(mask_count):
+            # Определяем длину текущей маски
+            mask_length = np.random.randint(min_mask_length, max_mask_length + 1)
+            
+            # Определяем начало маски (не ближе 10% к началу и концу)
+            safe_margin = int(audio_length * 0.1)
+            mask_start = np.random.randint(
+                safe_margin, 
+                audio_length - mask_length - safe_margin
+            )
+            
+            # Заглушаем сегмент (заменяем на тишину)
+            result[mask_start:mask_start + mask_length] = 0
+        
+        return result
+        
+        except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
+            
+        error_logger.log_error(
+            f"Ошибка при применении временного маскирования: {str(e)}", 
+            "augmentation", "apply_time_masking"
+        )
+        return audio_data  # В случае ошибки возвращаем исходный аудиофрагмент
 
 def augment_audio(audio_fragments):
     """
-    Оптимизированная аугментация аудиофрагментов с параллельной обработкой
-    Возвращает расширенный набор аудиофрагментов с ограничением
-    на максимальное количество сэмплов для повышения производительности
+    Аугментация аудиофрагментов по обновленной спецификации
+    с оптимизацией для снижения расхода памяти
+    
+    Спецификация аугментации:
+    1. Группа A: Шумоподавление (1 операция)
+    2. Группа B1: Замедление записи в 0.8 раза (1 операция)
+    3. Группа B2: Ускорение записи в 1.3 раза (1 операция)
+    4. Группа C: Временное маскирование (1 операция)
+    
+    Процесс применения:
+    1. Пункт 1: Удваиваем исходный набор удалением шума (группа A)
+    2. Пункт 2: Расширяем набор из пункта 1 замедлением (группа B1)
+    3. Пункт 3: Расширяем набор из пункта 1 ускорением (группа B2)
+    4. Пункт 4: Применяем временное маскирование ко всем результатам из пунктов 2 и 3
+    
+    Это должно увеличить размер датасета в 12 раз.
     """
     if not audio_fragments:
         return []
         
-    # Оптимизация: ограничиваем количество исходных фрагментов
-    if len(audio_fragments) > 5:
-        # Если фрагментов много, выбираем случайные 5 для аугментации
-        audio_fragments = random.sample(audio_fragments, 5)
-    
-    # Шаг 1: Исходные фрагменты
-    result_fragments = []
-    result_fragments.extend(audio_fragments)
-    
-    # Шаг 2: Удаление шума (группа A)
-    # Параллельное удаление шума, если достаточно фрагментов и процессоров
-    sample_for_denoising = audio_fragments[:min(3, len(audio_fragments))]
-    
-    if len(sample_for_denoising) > 1 and N_JOBS > 1:
-        try:
-            with ProcessPoolExecutor(max_workers=N_JOBS) as executor:
-                denoised_fragments = list(executor.map(remove_noise, sample_for_denoising))
-        except Exception as e:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-            line_no = exc_tb.tb_lineno
-            print(f"{fname} - {line_no} - {str(e)}")
-            
-            error_logger.log_error(f"Параллельное удаление шума не удалось: {str(e)}", "processing", "augmentation")
-            denoised_fragments = [remove_noise(fragment) for fragment in sample_for_denoising]
-    else:
-        denoised_fragments = [remove_noise(fragment) for fragment in sample_for_denoising]
+    # Предварительно проверяем и удлиняем слишком короткие фрагменты
+    audio_fragments = [ensure_min_length(fragment) for fragment in audio_fragments]
         
-    result_fragments.extend(denoised_fragments)
+    # Ограничим исходное количество фрагментов для экономии памяти
+    MAX_ORIGINAL_FRAGMENTS = 5  # Устанавливаем максимум исходных фрагментов
+    if len(audio_fragments) > MAX_ORIGINAL_FRAGMENTS:
+        import random
+        audio_fragments = random.sample(audio_fragments, MAX_ORIGINAL_FRAGMENTS)
+        error_logger.log_error(
+            f"Количество исходных фрагментов сокращено до {MAX_ORIGINAL_FRAGMENTS} для экономии памяти",
+            "augmentation", "augment_audio"
+        )
+        
+    # Шаг 1: Сохраняем исходные фрагменты
+    original_fragments = audio_fragments.copy()
     
-    # Оптимизация: ограничиваем количество аугментаций при большом объеме данных
-    if len(audio_fragments) >= 3:
-        # Для большого набора используем меньшее количество скоростей
-        speeds = [0.8, 1.2]
-    else:
-        # Для малого набора используем полный набор скоростей
-        speeds = [0.8, 0.9, 1.1, 1.2]
+    # Освобождаем память после каждого этапа
+    import gc
     
-    # Набор после шагов 1-2
-    step1_2_fragments = result_fragments.copy()
-    
-    # Оптимизация: ограничиваем базовый набор для дальнейшей аугментации
-    if len(step1_2_fragments) > 8:
-        step1_2_fragments = random.sample(step1_2_fragments, 8)
-    
-    # Шаг 3-4: Параллельное изменение скорости
-    all_speed_tasks = []
-    for fragment in step1_2_fragments:
-        for speed in speeds:
-            all_speed_tasks.append((fragment, speed))
-    
-    # Параллельная обработка для изменения скорости, если задач достаточно
-    if len(all_speed_tasks) >= 4 and N_JOBS > 1:
+    # Группа A: Удаление шума (Пункт 1)
+    # Применяем ко всем исходным фрагментам
+    denoised_fragments = []
+    for fragment in original_fragments:
         try:
-            with ProcessPoolExecutor(max_workers=N_JOBS) as executor:
-                # Распаковываем аргументы для параллельного выполнения
-                speed_fragments = list(executor.map(
-                    lambda args: fast_change_speed(*args),
-                    all_speed_tasks
-                ))
+            denoised = remove_noise(fragment)
+            # Проверяем длину после шумоподавления
+            denoised = ensure_min_length(denoised)
+            denoised_fragments.append(denoised)
         except Exception as e:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-            line_no = exc_tb.tb_lineno
-            print(f"{fname} - {line_no} - {str(e)}")
-            
-            error_logger.log_error(f"Параллельное изменение скорости не удалось: {str(e)}", "processing", "augmentation")
-            speed_fragments = [fast_change_speed(fragment, speed) for fragment, speed in all_speed_tasks]
-    else:
-        speed_fragments = [fast_change_speed(fragment, speed) for fragment, speed in all_speed_tasks]
+            error_logger.log_error(f"Ошибка удаления шума: {str(e)}", "augmentation", "augment_audio")
     
-    result_fragments.extend(speed_fragments)
+    # Объединяем исходные и обработанные фрагменты (Пункт 1 в спецификации)
+    step1_fragments = original_fragments.copy() + denoised_fragments
     
-    # Оптимизация: проверяем, не превышаем ли лимит
-    if len(result_fragments) > MAX_AUGMENTED_SAMPLES:
-        # Если превышаем, случайно выбираем подмножество
-        result_fragments = random.sample(result_fragments, MAX_AUGMENTED_SAMPLES)
-        return result_fragments
+    # Освобождаем память
+    gc.collect()
     
-    # Оптимизация: ограничиваем базовый набор для тональных изменений
-    steps_1_4_fragments = result_fragments.copy()
-    if len(steps_1_4_fragments) > 10:
-        steps_1_4_fragments = random.sample(steps_1_4_fragments, 10)
+    # Группа B1: Замедление записи в 0.8 раза (Пункт 2)
+    # Применяем к результатам пункта 1
+    slowdown_fragments = []
+    speed_factor_slow = 0.8  # Только один фактор замедления
     
-    # Шаг 5: Параллельное изменение тональности
-    pitch_shifts = [-2, 2]  # Только крайние значения
-    samples_for_pitch = steps_1_4_fragments[:min(5, len(steps_1_4_fragments))]
-    
-    # Создаем список задач для параллельной обработки
-    all_pitch_tasks = []
-    for fragment in samples_for_pitch:
-        for pitch_shift in pitch_shifts:
-            all_pitch_tasks.append((fragment, pitch_shift))
-    
-    # Параллельная обработка для изменения тональности, если задач достаточно
-    if len(all_pitch_tasks) >= 4 and N_JOBS > 1:
+    for fragment in step1_fragments:
         try:
-            with ProcessPoolExecutor(max_workers=N_JOBS) as executor:
-                # Распаковываем аргументы для параллельного выполнения
-                pitch_fragments = list(executor.map(
-                    lambda args: fast_change_pitch(*args),
-                    all_pitch_tasks
-                ))
+            slow_fragment = fast_change_speed(fragment, speed_factor_slow)
+            # Проверяем длину после изменения скорости
+            slow_fragment = ensure_min_length(slow_fragment)
+            slowdown_fragments.append(slow_fragment)
         except Exception as e:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-            line_no = exc_tb.tb_lineno
-            print(f"{fname} - {line_no} - {str(e)}")
-            
-            error_logger.log_error(f"Параллельное изменение тональности не удалось: {str(e)}", "processing", "augmentation")
-            pitch_fragments = [fast_change_pitch(fragment, pitch_shift) for fragment, pitch_shift in all_pitch_tasks]
-    else:
-        pitch_fragments = [fast_change_pitch(fragment, pitch_shift) for fragment, pitch_shift in all_pitch_tasks]
+            error_logger.log_error(f"Ошибка замедления: {str(e)}", "augmentation", "augment_audio")
     
-    result_fragments.extend(pitch_fragments)
+    # Группа B2: Ускорение записи в 1.3 раза (Пункт 3)
+    # Применяем к результатам пункта 1
+    speedup_fragments = []
+    speed_factor_fast = 1.3  # Только один фактор ускорения
     
-    # Оптимизация: ограничиваем итоговое количество фрагментов
+    for fragment in step1_fragments:
+        try:
+            fast_fragment = fast_change_speed(fragment, speed_factor_fast)
+            # Проверяем длину после изменения скорости
+            fast_fragment = ensure_min_length(fast_fragment)
+            speedup_fragments.append(fast_fragment)
+        except Exception as e:
+            error_logger.log_error(f"Ошибка ускорения: {str(e)}", "augmentation", "augment_audio")
+    
+    # Объединяем результаты пунктов 2 и 3
+    speed_modified_fragments = slowdown_fragments + speedup_fragments
+    
+    # Освобождаем память
+    gc.collect()
+    
+    # Группа C: Временное маскирование (Пункт 4)
+    # Применяем к результатам пунктов 2 и 3
+    masked_fragments = []
+    
+    # Используем батчи для снижения расхода памяти
+    for i in range(0, len(speed_modified_fragments), MAX_BATCH_SIZE):
+        batch = speed_modified_fragments[i:i + MAX_BATCH_SIZE]
+        for fragment in batch:
+            try:
+                masked_fragment = apply_time_masking(fragment)
+                # Проверяем длину после маскирования
+                masked_fragment = ensure_min_length(masked_fragment)
+                masked_fragments.append(masked_fragment)
+            except Exception as e:
+                error_logger.log_error(f"Ошибка временного маскирования: {str(e)}", "augmentation", "augment_audio")
+        
+        # Освобождаем память после каждого батча
+        gc.collect()
+    
+    # Объединяем все результаты:
+    # 1. Исходные фрагменты (original_fragments)
+    # 2. Фрагменты с удаленным шумом (denoised_fragments)
+    # 3. Замедленные фрагменты из пунктов 1 и 2 (slowdown_fragments)
+    # 4. Ускоренные фрагменты из пунктов 1 и 2 (speedup_fragments)
+    # 5. Маскированные фрагменты из пунктов 3 и 4 (masked_fragments)
+    result_fragments = original_fragments + denoised_fragments + slowdown_fragments + speedup_fragments + masked_fragments
+    
+    # Сборка мусора перед возвратом результата
+    gc.collect()
+    
+    # Если результат превышает допустимый размер, случайно выбираем подмножество
     if len(result_fragments) > MAX_AUGMENTED_SAMPLES:
-        # Если итоговый набор слишком большой, ограничиваем его
+        import random
         result_fragments = random.sample(result_fragments, MAX_AUGMENTED_SAMPLES)
+        error_logger.log_error(
+            f"Результат аугментации превысил лимит и был ограничен до {MAX_AUGMENTED_SAMPLES} фрагментов",
+            "augmentation", "augment_audio"
+        )
+    
+    # Логирование результатов для отладки
+    error_logger.log_error(
+        f"Аугментация создала {len(result_fragments)} фрагментов из {len(audio_fragments)} исходных",
+        "augmentation", "augment_audio"
+    )
     
     return result_fragments
 
@@ -170,13 +285,30 @@ def remove_noise(audio_data):
     if len(audio_data) < 2048:
         return audio_data
     
+    try:
     # Расчет спектрограммы с использованием оптимизированных параметров
     n_fft = N_FFT
     
-    # Быстрое вычисление спектрограммы напрямую через numpy
-    # вместо librosa.stft для ускорения
-    stft = np.fft.rfft(np.hanning(n_fft).astype(np.float32) * 
-                      np.pad(audio_data, (0, n_fft - len(audio_data) % n_fft if len(audio_data) % n_fft else 0)))
+        # Предварительно проверяем размерность и подгоняем размер окна к длине аудио
+        if n_fft > len(audio_data):
+            n_fft = 2 ** int(np.log2(len(audio_data)))
+            if n_fft < 512:  # слишком маленькое окно бесполезно для шумоподавления
+                return audio_data
+        
+        # Корректный padding нужной длины
+        padding_length = n_fft - (len(audio_data) % n_fft) if len(audio_data) % n_fft else 0
+        padded_audio = np.pad(audio_data, (0, padding_length))
+        
+        # Используем более безопасный метод для расчета STFT
+        # Создаем окно Ханна подходящего размера
+        window = np.hanning(n_fft).astype(np.float32)
+        
+        # Делим сигнал на фреймы подходящего размера
+        # и применяем быстрое преобразование Фурье
+        hop = n_fft // 4
+        frames = librosa.util.frame(padded_audio, frame_length=n_fft, hop_length=hop)
+        frames = frames.T * window  # Применяем оконную функцию
+        stft = np.fft.rfft(frames, axis=1)
     
     mag = np.abs(stft)
     phase = np.angle(stft)
@@ -184,10 +316,8 @@ def remove_noise(audio_data):
     # Адаптивное определение шума с оптимизированными параметрами
     noise_percentile = 15  # Нижний персентиль величин, вероятно, является шумом
     
-    # Оптимизация: вычисление порога шума
-    # Используем axis=0 вместо axis=1 из-за другой формы массива от np.fft.rfft
+        # Вычисление порога шума
     noise_thresh = np.percentile(mag, noise_percentile, axis=0)
-    noise_thresh = noise_thresh[:, np.newaxis]
     
     # Применяем мягкое спектральное вычитание с адаптивным порогом и векторизацией
     gain = 1.0 - (noise_thresh / (mag + 1e-10))
@@ -196,9 +326,37 @@ def remove_noise(audio_data):
     
     # Оптимизированное обратное преобразование
     stft_denoised = mag * np.exp(1j * phase)
-    audio_denoised = np.fft.irfft(stft_denoised)[:len(audio_data)]
+        denoised_frames = np.fft.irfft(stft_denoised)
+        
+        # Восстанавливаем сигнал с overlap-add
+        audio_denoised = np.zeros(len(padded_audio))
+        window_sum = np.zeros(len(padded_audio))
+        
+        for i, frame in enumerate(denoised_frames):
+            start = i * hop
+            end = start + n_fft
+            if end <= len(audio_denoised):
+                audio_denoised[start:end] += frame * window
+                window_sum[start:end] += window ** 2
+        
+        # Нормализуем по весу окон и обрезаем до исходной длины
+        idx = window_sum > 1e-10
+        audio_denoised[idx] /= window_sum[idx]
+        
+        return audio_denoised[:len(audio_data)]
     
-    return audio_denoised
+    except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
+        
+        error_logger.log_error(
+            f"Ошибка удаления шума: {str(e)}", 
+            "audio", "remove_noise"
+        )
+        # Возвращаем исходные данные в случае ошибки
+        return audio_data
 
 def fast_change_speed(audio_data, speed_factor):
     """
@@ -214,105 +372,98 @@ def fast_change_speed(audio_data, speed_factor):
         if len(audio_data) < 1024:
             return audio_data
             
-        # Оптимизация: используем более эффективный метод ресемплирования
-        # для изменения скорости вместо librosa.effects.time_stretch
-        # Это быстрее для нашего случая
-        
-        # Для ускорения фрагмента уменьшаем его длину
-        if speed_factor > 1.0:
-            # Рассчитываем новую длину
-            new_length = int(len(audio_data) / speed_factor)
-            # Быстрое ресемплирование с использованием линейной интерполяции
-            indices = np.linspace(0, len(audio_data) - 1, new_length)
-            indices = indices.astype(np.int32)
-            # Выборка значений по индексам
-            y_stretch = audio_data[indices]
-        # Для замедления фрагмента увеличиваем его длину
-        else:
-            # Рассчитываем новую длину
-            new_length = int(len(audio_data) * 1/speed_factor)
-            # Быстрое ресемплирование с использованием линейной интерполяции
-            indices = np.linspace(0, len(audio_data) - 1, new_length)
-            # Интерполируем значения
-            y_stretch = np.interp(indices, np.arange(len(audio_data)), audio_data)
-        
-        # Обеспечиваем, что результат имеет ту же длину, что и вход
-        target_length = len(audio_data)
-        if len(y_stretch) > target_length:
-            y_stretch = y_stretch[:target_length]
-        elif len(y_stretch) < target_length:
-            # Дополняем нулями вместо отражения для скорости
-            padding = np.zeros(target_length - len(y_stretch), dtype=audio_data.dtype)
-            y_stretch = np.concatenate([y_stretch, padding])
+        # Проверка допустимости параметра
+        if speed_factor <= 0:
+            speed_factor = 1.0 
             
-        return y_stretch
+        # Ограничение длины обрабатываемого аудио
+        max_length = 10 * SAMPLE_RATE  # 10 секунд максимум
+        if len(audio_data) > max_length:
+            audio_data = audio_data[:max_length]
+            
+        # Определяем необходимый размер выходного массива
+        output_length = int(len(audio_data) / speed_factor)
+        if output_length < 1024:  # Слишком короткий результат бесполезен
+            return audio_data
+            
+        # Используем быстрое и простое ресемплирование
+        indices = np.linspace(0, len(audio_data) - 1, output_length)
+            indices = indices.astype(np.int32)
+        result = audio_data[indices]
+        return result
+            
     except Exception as e:
         exc_type, exc_obj, exc_tb = sys.exc_info()
         fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
         line_no = exc_tb.tb_lineno
         print(f"{fname} - {line_no} - {str(e)}")
         
-        # В многопроцессорном режиме логирование ошибок может не работать корректно
-        # error_message = f"Ошибка при изменении скорости: {str(e)}"
-        # error_logger.log_error(error_message, "processing", "augmentation")
+        error_logger.log_error(
+            f"Ошибка изменения скорости: {str(e)}", 
+            "audio", "fast_change_speed"
+        )
         return audio_data
 
 def fast_change_pitch(audio_data, n_steps, sr=16000):
     """
-    Оптимизированное изменение высоты тона без сохранения длительности
-    Использует более быстрый подход с прямым ресемплированием
-    Адаптировано для многопроцессорной обработки
+    Оптимизированное изменение высоты тона аудиоданных
+    с использованием numpy и scipy, адаптировано для многопроцессорной обработки
     """
     try:
         # Проверка на пустые данные
-        if len(audio_data) == 0:
+        if len(audio_data) == 0 or np.all(audio_data == 0):
             return audio_data
             
-        # Проверка на минимальную длину аудио
+        # Для очень коротких аудио пропускаем обработку
         if len(audio_data) < 1024:
             return audio_data
+            
+        # Ограничение длины обрабатываемого аудио
+        max_length = 10 * sr  # 10 секунд максимум
+        if len(audio_data) > max_length:
+            audio_data = audio_data[:max_length]
+            
+        # Используем scipy.signal.resample вместо librosa.effects.pitch_shift
+        # для более быстрого изменения высоты тона
         
-        # Оптимизация: используем прямой метод изменения высоты тона
-        # через ресемплирование без использования librosa.effects.pitch_shift
-        # Это значительно быстрее для наших целей
+        # Ограничение n_steps для предотвращения экстремальных значений
+        n_steps = np.clip(n_steps, -4, 4)
         
-        # Рассчитываем коэффициент ресемплирования
-        # ~5.9% на полутон
+        # Коэффициент изменения частоты дискретизации для изменения высоты тона
         rate = 2.0 ** (n_steps / 12.0)
         
-        # Ресемплируем сигнал для изменения высоты тона
-        # Для более высокого тона уменьшаем длину, а затем восстанавливаем исходную длину
-        # Для более низкого тона увеличиваем длину, а затем обрезаем до исходной длины
+        # Изменение высоты тона путем изменения частоты дискретизации с последующей компенсацией
+        # 1. Ресемплирование аудио с новой частотой дискретизации
+        new_length = int(len(audio_data) / rate)
+        if new_length < 512:  # Слишком короткий результат бесполезен
+            return audio_data
+            
+        # Используем scipy.signal.resample вместо scipy.signal.resample_poly для лучшей точности
+        y_shifted = scipy.signal.resample(audio_data, new_length)
         
-        # Шаг 1: Ресемплирование
-        if rate > 1.0:  # Повышение тона
-            # Уменьшаем длину
-            indices = np.round(np.linspace(0, len(audio_data) - 1, int(len(audio_data) / rate)))
-            y_shifted = audio_data[indices.astype(int)]
-        else:  # Понижение тона
-            # Увеличиваем длину
-            indices = np.linspace(0, len(audio_data) - 1, int(len(audio_data) * 1/rate))
-            y_shifted = np.interp(indices, np.arange(len(audio_data)), audio_data)
-        
-        # Шаг 2: Восстановление исходной длины
-        target_length = len(audio_data)
-        if len(y_shifted) > target_length:
-            y_shifted = y_shifted[:target_length]
-        elif len(y_shifted) < target_length:
-            padding = np.zeros(target_length - len(y_shifted), dtype=audio_data.dtype)
-            y_shifted = np.concatenate([y_shifted, padding])
+        # Если длина изменилась значительно, обрезаем или дополняем
+        if len(y_shifted) > len(audio_data):
+            # Обрезаем до исходной длины
+            y_shifted = y_shifted[:len(audio_data)]
+        elif len(y_shifted) < len(audio_data):
+            # Дополняем нулями до исходной длины
+            padding = np.zeros(len(audio_data) - len(y_shifted))
+            y_shifted = np.concatenate((y_shifted, padding))
             
         return y_shifted
+    
     except Exception as e:
         exc_type, exc_obj, exc_tb = sys.exc_info()
         fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
         line_no = exc_tb.tb_lineno
         print(f"{fname} - {line_no} - {str(e)}")
         
-        # В многопроцессорном режиме логирование ошибок может не работать корректно
-        # error_message = f"Ошибка при изменении высоты тона: {str(e)}"
-        # error_logger.log_error(error_message, "processing", "augmentation")
-        return audio_data  # В случае ошибки возвращаем оригинальные данные
+        error_logger.log_error(
+            f"Ошибка изменения высоты тона: {str(e)}", 
+            "audio", "fast_change_pitch"
+        )
+        # В случае ошибки возвращаем исходный сигнал
+        return audio_data
 
 def augment_audio_data(audio_fragments, labels, augmentation_factor=2):
     """

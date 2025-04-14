@@ -11,6 +11,7 @@ from backend.emotion_recognition.model import EmotionRecognitionModel
 from backend.api.error_logger import error_logger
 import zipfile
 import io
+import sys
 
 api_bp = Blueprint('api', __name__)
 
@@ -81,13 +82,25 @@ def id_training():
                 return jsonify({'message': 'Обучение модели начато успешно'}), 200
             except Exception as e:
                 voice_id_model_lock.release()
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                line_no = exc_tb.tb_lineno
+                print(f"{fname} - {line_no} - {str(e)}")
                 error_logger.log_error(f"Не удалось запустить поток обучения: {str(e)}", "training", "voice_id")
                 return jsonify({'error': f'Ошибка запуска обучения: {str(e)}'}), 500
         else:
             return jsonify({'error': 'Модель уже обучается. Попробуйте позже'}), 429
     except ValueError as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
         return jsonify({'error': str(e)}), 400
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
         error_logger.log_error(f"Неожиданная ошибка при обучении: {str(e)}", "training", "voice_id")
         return jsonify({'error': f'Ошибка обработки данных: {str(e)}'}), 500
 
@@ -128,13 +141,25 @@ def em_training():
                 return jsonify({'message': 'Обучение модели начато успешно'}), 200
             except Exception as e:
                 emotion_model_lock.release()
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                line_no = exc_tb.tb_lineno
+                print(f"{fname} - {line_no} - {str(e)}")
                 error_logger.log_error(f"Не удалось запустить поток обучения эмоций: {str(e)}", "training", "emotion")
                 return jsonify({'error': f'Ошибка запуска обучения: {str(e)}'}), 500
         else:
             return jsonify({'error': 'Модель уже обучается. Попробуйте позже'}), 429
     except ValueError as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
         return jsonify({'error': str(e)}), 400
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
         error_logger.log_error(f"Неожиданная ошибка при обучении модели эмоций: {str(e)}", "training", "emotion")
         return jsonify({'error': f'Ошибка обработки данных: {str(e)}'}), 500
 
@@ -164,6 +189,10 @@ def identify():
             user_name = voice_id_model.predict(processed_audio)
             # "unknown" здесь означает легитимный результат - голос не распознан
         except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
             error_logger.log_error(f"Ошибка при идентификации пользователя: {str(e)}", "api", "identify")
             # Только при технической ошибке в модели возвращаем unknown
             user_name = "unknown"
@@ -172,6 +201,10 @@ def identify():
         try:
             detected_emotion = emotion_model.predict(processed_audio)
         except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
             error_logger.log_error(f"Ошибка при определении эмоции: {str(e)}", "api", "identify")
             # При технической ошибке в модели выбираем наиболее нейтральную эмоцию
             detected_emotion = "радость" # Выбираем эмоцию по умолчанию
@@ -186,9 +219,17 @@ def identify():
         }), 200
         
     except ValueError as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
         # Обработка ошибок валидации
         return jsonify({'error': str(e)}), 400
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
         # Обработка других ошибок
         error_logger.log_error(f"Общая ошибка при идентификации: {str(e)}", "api", "identify")
         return jsonify({'error': f'Ошибка обработки запроса: {str(e)}'}), 500
@@ -223,6 +264,10 @@ def reset_model():
             else:
                 return jsonify({'error': 'Модель используется. Попробуйте позже'}), 429
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
         return jsonify({'error': f'Ошибка сброса модели: {str(e)}'}), 500
 
 @api_bp.route('/model/load', methods=['POST'])
@@ -265,6 +310,10 @@ def load_model():
             else:
                 return jsonify({'error': 'Модель используется. Попробуйте позже'}), 429
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
         return jsonify({'error': f'Ошибка загрузки модели: {str(e)}'}), 500
 
 @api_bp.route('/model/upload', methods=['POST'])
@@ -325,6 +374,10 @@ def upload_model():
             'file_path': base_path
         }), 200
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
         return jsonify({'error': f'Ошибка загрузки файла: {str(e)}'}), 500
 
 @api_bp.route('/status', methods=['GET'])
@@ -497,6 +550,10 @@ def download_model():
             else:
                 return jsonify({'error': 'Модель используется. Попробуйте позже'}), 429
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
         return jsonify({'error': f'Ошибка при скачивании модели: {str(e)}'}), 500
 
 def train_voice_id_model(dataset):
@@ -521,6 +578,10 @@ def train_voice_id_model(dataset):
         # Устанавливаем статус завершения
         training_progress['voice_id']['status'] = 'completed'
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
         error_logger.log_error(f"Ошибка при обучении модели идентификации: {str(e)}", "training", "voice_id")
         training_progress['voice_id']['status'] = 'error'
     finally:
@@ -548,6 +609,10 @@ def train_emotion_model(dataset):
         # Устанавливаем статус завершения
         training_progress['emotion']['status'] = 'completed'
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
         error_logger.log_error(f"Ошибка при обучении модели эмоций: {str(e)}", "training", "emotion")
         training_progress['emotion']['status'] = 'error'
     finally:

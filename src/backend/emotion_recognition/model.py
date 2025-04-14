@@ -9,6 +9,7 @@ from backend.api.error_logger import error_logger
 from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
 import hashlib
+import sys
 
 # Константы для оптимизации
 N_JOBS = max(1, multiprocessing.cpu_count() - 1)  # Оставляем 1 ядро для системы
@@ -16,16 +17,19 @@ FEATURE_CACHE_SIZE = 512  # Размер кэша для функции извл
 USE_THREADING = True      # Использовать многопоточность для предсказаний
 
 # Настройка GPU для TensorFlow (применяем только если не настроено в другом месте)
-if not tf.config.experimental.list_physical_devices('GPU'):
-    try:
-        gpus = tf.config.experimental.list_physical_devices('GPU')
-        if gpus:
-            # Ограничиваем количество используемой GPU памяти
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-            error_logger.log_error(f"Используется GPU для эмоций: {len(gpus)} устройств", "initialization", "emotion_recognition")
-    except Exception as e:
-        error_logger.log_error(f"Ошибка при настройке GPU для эмоций: {str(e)}", "initialization", "emotion_recognition")
+try:
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        # Ограничиваем количество используемой GPU памяти
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        error_logger.log_error(f"Используется GPU для эмоций: {len(gpus)} устройств", "initialization", "emotion_recognition")
+except Exception as e:
+    exc_type, exc_obj, exc_tb = sys.exc_info()
+    fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+    line_no = exc_tb.tb_lineno
+    print(f"{fname} - {line_no} - {str(e)}")
+    error_logger.log_error(f"Ошибка при настройке GPU для эмоций: {str(e)}", "initialization", "emotion_recognition")
 
 class EmotionRecognitionModel:
     def __init__(self):
@@ -239,6 +243,10 @@ class EmotionRecognitionModel:
                         label_index = label_to_index[label]
                         return (features, label_index)
                     except Exception as e:
+                        exc_type, exc_obj, exc_tb = sys.exc_info()
+                        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                        line_no = exc_tb.tb_lineno
+                        print(f"{fname} - {line_no} - {str(e)}")
                         error_logger.log_error(f"Ошибка при обработке примера: {str(e)}", "training", "emotion_recognition")
                         return None
                 
@@ -257,6 +265,10 @@ class EmotionRecognitionModel:
                         label_onehot[label_index] = 1
                         all_labels.append(label_onehot)
             except Exception as e:
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                line_no = exc_tb.tb_lineno
+                print(f"{fname} - {line_no} - {str(e)}")
                 error_logger.log_error(f"Ошибка при параллельной обработке: {str(e)}", "training", "emotion_recognition")
                 # Возвращаемся к последовательной обработке
                 for item in dataset:
@@ -270,6 +282,10 @@ class EmotionRecognitionModel:
                         label_onehot[label_index] = 1
                         all_labels.append(label_onehot)
                     except Exception as e:
+                        exc_type, exc_obj, exc_tb = sys.exc_info()
+                        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                        line_no = exc_tb.tb_lineno
+                        print(f"{fname} - {line_no} - {str(e)}")
                         error_logger.log_error(f"Ошибка при обработке примера: {str(e)}", "training", "emotion_recognition")
                         continue
         else:
@@ -285,6 +301,10 @@ class EmotionRecognitionModel:
                     label_onehot[label_index] = 1
                     all_labels.append(label_onehot)
                 except Exception as e:
+                    exc_type, exc_obj, exc_tb = sys.exc_info()
+                    fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                    line_no = exc_tb.tb_lineno
+                    print(f"{fname} - {line_no} - {str(e)}")
                     error_logger.log_error(f"Ошибка при обработке примера: {str(e)}", "training", "emotion_recognition")
                     continue
         
@@ -412,8 +432,11 @@ class EmotionRecognitionModel:
                 "emotion_recognition"
             )
         except Exception as e:
-            error_msg = f"Ошибка при обучении модели эмоций: {str(e)}"
-            error_logger.log_error(error_msg, "training", "emotion_recognition")
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
+            error_logger.log_error(f"Ошибка при обучении модели эмоций: {str(e)}", "training", "emotion_recognition")
             
             # Пытаемся восстановить веса из кэша, если произошла ошибка
             if self.weights_cache:
@@ -425,7 +448,7 @@ class EmotionRecognitionModel:
                 )
                 self.model.set_weights(self.weights_cache[last_epoch])
             else:
-                raise ValueError(error_msg)
+                raise ValueError("Не удалось восстановить веса из кэша")
         
         self.is_trained = True
         
@@ -450,6 +473,10 @@ class EmotionRecognitionModel:
                 min_epoch = min(self.weights_cache.keys())
                 del self.weights_cache[min_epoch]
         except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
             error_logger.log_error(f"Ошибка при кэшировании весов модели эмоций: {str(e)}", "training", "emotion_recognition")
 
     def predict(self, audio_fragments):
@@ -482,6 +509,10 @@ class EmotionRecognitionModel:
                 with ThreadPoolExecutor(max_workers=N_JOBS) as executor:
                     features_list = list(executor.map(extract_func, audio_fragments))
             except Exception as e:
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                line_no = exc_tb.tb_lineno
+                print(f"{fname} - {line_no} - {str(e)}")
                 error_logger.log_error(
                     f"Ошибка при параллельном извлечении признаков эмоций: {str(e)}", 
                     "prediction", 
@@ -494,6 +525,10 @@ class EmotionRecognitionModel:
                         features = extract_func(fragment)
                         features_list.append(features)
                     except Exception as e:
+                        exc_type, exc_obj, exc_tb = sys.exc_info()
+                        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                        line_no = exc_tb.tb_lineno
+                        print(f"{fname} - {line_no} - {str(e)}")
                         error_logger.log_error(
                             f"Ошибка при извлечении признаков эмоций: {str(e)}",
                             "prediction", 
@@ -507,6 +542,10 @@ class EmotionRecognitionModel:
                     features = extract_func(fragment)
                     features_list.append(features)
                 except Exception as e:
+                    exc_type, exc_obj, exc_tb = sys.exc_info()
+                    fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                    line_no = exc_tb.tb_lineno
+                    print(f"{fname} - {line_no} - {str(e)}")
                     error_logger.log_error(
                         f"Ошибка при извлечении признаков эмоций: {str(e)}",
                         "prediction", 
@@ -587,6 +626,10 @@ class EmotionRecognitionModel:
             try:
                 self.model.save(f'{model_path}.h5')
             except Exception as e:
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                line_no = exc_tb.tb_lineno
+                print(f"{fname} - {line_no} - {str(e)}")
                 error_logger.log_error(f"Ошибка при сохранении модели в H5: {str(e)}", "model", "emotion_recognition")
                 # Альтернативный метод сохранения, если обычный не сработал
                 self.model.save_weights(f'{model_path}_weights.h5')
@@ -602,6 +645,10 @@ class EmotionRecognitionModel:
             print(f"Модель распознавания эмоций сохранена в {model_path}")
             return model_path
         except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
             error_logger.log_error(f"Критическая ошибка при сохранении модели: {str(e)}", "model", "emotion_recognition")
             print(f"Не удалось сохранить модель распознавания эмоций: {str(e)}")
             return None
@@ -611,12 +658,22 @@ class EmotionRecognitionModel:
         Загрузка модели из файла
         """
         # Загрузка модели TensorFlow
-        self.model = models.load_model(f'{path}.h5')
-        
-        # Загрузка дополнительных данных
-        with open(f'{path}_metadata.pkl', 'rb') as f:
-            metadata = pickle.load(f)
-            self.is_trained = metadata['is_trained']
-            # Загружаем метки эмоций, если они есть
-            if 'emotion_labels' in metadata:
-                self.emotion_labels = metadata['emotion_labels']
+        try:
+            self.model = models.load_model(f'{path}.h5')
+            
+            # Загрузка дополнительных данных
+            with open(f'{path}_metadata.pkl', 'rb') as f:
+                metadata = pickle.load(f)
+                self.is_trained = metadata['is_trained']
+                # Загружаем метки эмоций, если они есть
+                if 'emotion_labels' in metadata:
+                    self.emotion_labels = metadata['emotion_labels']
+            
+            return True
+        except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
+            error_logger.log_error(f"Ошибка при загрузке модели: {str(e)}", "model", "emotion_recognition")
+            return False

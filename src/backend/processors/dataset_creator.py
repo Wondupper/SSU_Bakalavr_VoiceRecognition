@@ -6,6 +6,8 @@ from concurrent.futures import ProcessPoolExecutor  # Добавляем под�
 import multiprocessing
 from .augmentation_processor import augment_audio
 from backend.api.error_logger import error_logger
+import sys
+import os
 
 # Константы для вычисления признаков
 N_MFCC = 40
@@ -47,6 +49,11 @@ def create_voice_id_dataset(audio_fragments, name):
             dataset = [{'features': features, 'label': name} for features in features_list]
         except Exception as e:
             # Если параллельное извлечение не удалось, используем последовательное
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
+            
             error_logger.log_error(f"Параллельная обработка не удалась: {str(e)}, переключаемся на последовательную", 
                                   "processing", "dataset_creator")
             dataset = [{'features': extract_features(fragment), 'label': name} 
@@ -95,6 +102,11 @@ def create_emotion_dataset(audio_fragments, emotion):
             dataset = [{'features': features, 'label': emotion} for features in features_list]
         except Exception as e:
             # Если параллельное извлечение не удалось, используем последовательное
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
+            
             error_logger.log_error(f"Параллельная обработка не удалась: {str(e)}, переключаемся на последовательную", 
                                   "processing", "dataset_creator")
             dataset = [{'features': extract_features(fragment), 'label': emotion} 
@@ -270,6 +282,11 @@ def extract_features(audio_data, for_emotion=False):
         return features.T  # Транспонируем для соответствия формату (n_samples, n_features)
         
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
+        
         error_message = f"Ошибка при извлечении признаков: {str(e)}"
         error_logger.log_error(error_message, "features", "extract_features")
         raise ValueError(error_message)

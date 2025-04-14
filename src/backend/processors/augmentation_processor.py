@@ -6,6 +6,8 @@ from concurrent.futures import ProcessPoolExecutor  # Поддержка мно�
 import multiprocessing
 from backend.api.error_logger import error_logger
 from functools import partial
+import sys
+import os
 
 # Константы для оптимизации
 MAX_AUGMENTED_SAMPLES = 50  # Максимальное количество аугментированных образцов
@@ -51,6 +53,11 @@ def augment_audio(audio_fragments):
             with ProcessPoolExecutor(max_workers=N_JOBS) as executor:
                 denoised_fragments = list(executor.map(remove_noise, sample_for_denoising))
         except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
+            
             error_logger.log_error(f"Параллельное удаление шума не удалось: {str(e)}", "processing", "augmentation")
             denoised_fragments = [remove_noise(fragment) for fragment in sample_for_denoising]
     else:
@@ -89,6 +96,11 @@ def augment_audio(audio_fragments):
                     all_speed_tasks
                 ))
         except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
+            
             error_logger.log_error(f"Параллельное изменение скорости не удалось: {str(e)}", "processing", "augmentation")
             speed_fragments = [fast_change_speed(fragment, speed) for fragment, speed in all_speed_tasks]
     else:
@@ -127,6 +139,11 @@ def augment_audio(audio_fragments):
                     all_pitch_tasks
                 ))
         except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
+            
             error_logger.log_error(f"Параллельное изменение тональности не удалось: {str(e)}", "processing", "augmentation")
             pitch_fragments = [fast_change_pitch(fragment, pitch_shift) for fragment, pitch_shift in all_pitch_tasks]
     else:
@@ -230,6 +247,11 @@ def fast_change_speed(audio_data, speed_factor):
             
         return y_stretch
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
+        
         # В многопроцессорном режиме логирование ошибок может не работать корректно
         # error_message = f"Ошибка при изменении скорости: {str(e)}"
         # error_logger.log_error(error_message, "processing", "augmentation")
@@ -282,6 +304,11 @@ def fast_change_pitch(audio_data, n_steps, sr=16000):
             
         return y_shifted
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
+        
         # В многопроцессорном режиме логирование ошибок может не работать корректно
         # error_message = f"Ошибка при изменении высоты тона: {str(e)}"
         # error_logger.log_error(error_message, "processing", "augmentation")
@@ -359,6 +386,11 @@ def augment_audio_data(audio_fragments, labels, augmentation_factor=2):
                             augmented = apply_augmentation(audio, technique)
                             return (idx, augmented)
                         except Exception as e:
+                            exc_type, exc_obj, exc_tb = sys.exc_info()
+                            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                            line_no = exc_tb.tb_lineno
+                            print(f"{fname} - {line_no} - {str(e)}")
+                            
                             error_logger.log_error(
                                 f"Ошибка аугментации фрагмента: {str(e)}", 
                                 "augmentation", "process_augmentation"
@@ -374,6 +406,11 @@ def augment_audio_data(audio_fragments, labels, augmentation_factor=2):
                             augmented_fragments.append(augmented_audio)
                             augmented_labels.append(labels[idx])
             except Exception as e:
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                line_no = exc_tb.tb_lineno
+                print(f"{fname} - {line_no} - {str(e)}")
+                
                 error_logger.log_error(
                     f"Ошибка параллельной аугментации: {str(e)}", 
                     "augmentation", "augment_audio_data"
@@ -390,6 +427,11 @@ def augment_audio_data(audio_fragments, labels, augmentation_factor=2):
         return augmented_fragments, augmented_labels
         
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
+        
         error_logger.log_error(f"Ошибка аугментации аудиоданных: {str(e)}", "augmentation", "augment_audio_data")
         # В случае ошибки возвращаем исходный набор
         return audio_fragments, labels
@@ -442,6 +484,11 @@ def apply_augmentation(audio, technique):
             return audio  # Возвращаем исходный аудиофрагмент без изменений
             
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
+        
         error_logger.log_error(f"Ошибка при применении аугментации: {str(e)}", "augmentation", "apply_augmentation")
         return None
 
@@ -461,6 +508,11 @@ def add_noise_with_controlled_snr(audio):
         return add_noise_with_snr(audio, snr_db)
         
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
+        
         error_logger.log_error(f"Ошибка при добавлении шума: {str(e)}", "augmentation", "add_noise_with_controlled_snr")
         return audio
 
@@ -499,6 +551,11 @@ def add_noise_with_snr(audio, snr_db):
         return noisy_audio
         
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
+        
         error_logger.log_error(f"Ошибка при добавлении шума с SNR: {str(e)}", "augmentation", "add_noise_with_snr")
         return audio
 
@@ -545,6 +602,11 @@ def batch_augment(audio_fragments, labels, augmentation_techniques, parallel=Tru
                             augmented_labels.append(labels[i])
                             
                 except Exception as e:
+                    exc_type, exc_obj, exc_tb = sys.exc_info()
+                    fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                    line_no = exc_tb.tb_lineno
+                    print(f"{fname} - {line_no} - {str(e)}")
+                    
                     error_logger.log_error(
                         f"Ошибка при параллельной пакетной аугментации: {str(e)}", 
                         "augmentation", "batch_augment"
@@ -584,5 +646,10 @@ def batch_augment(audio_fragments, labels, augmentation_techniques, parallel=Tru
         return all_fragments, all_labels
         
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
+        
         error_logger.log_error(f"Ошибка при пакетной аугментации: {str(e)}", "augmentation", "batch_augment")
         return audio_fragments, labels

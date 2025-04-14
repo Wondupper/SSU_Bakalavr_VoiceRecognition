@@ -7,6 +7,8 @@ from functools import lru_cache  # Импорт декоратора lru_cache
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor  # Поддержка многопоточности
 import multiprocessing
 from backend.api.error_logger import error_logger
+import sys
+import traceback
 
 # Константы
 AUDIO_FRAGMENT_LENGTH = 3  # длина фрагмента в секундах
@@ -111,6 +113,10 @@ def process_audio(audio_file):
                         audio_data = normalize_audio(audio_data)
         
         except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
             error_logger.log_error(
                 f"Ошибка при обработке аудио: {str(e)}",
                 "audio", "process_audio"
@@ -154,6 +160,10 @@ def process_audio(audio_file):
         return audio_fragments
         
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
         error_message = f"Критическая ошибка обработки аудио: {str(e)}"
         error_logger.log_error(error_message, "audio", "process_audio")
         raise ValueError(error_message)
@@ -222,6 +232,11 @@ def enhanced_noise_removal(audio_data):
         return audio_denoised
         
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
+        
         error_logger.log_error(
             f"Ошибка при удалении шума: {str(e)}", 
             "audio", "enhanced_noise_removal"
@@ -302,6 +317,11 @@ def enhanced_silence_removal(audio_data, sr):
             return audio_data
     
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
+        
         error_logger.log_error(
             f"Ошибка при удалении тишины: {str(e)}",
             "audio", "enhanced_silence_removal"
@@ -381,6 +401,11 @@ def improved_split_audio(audio_data, sr):
         return fragments
         
     except Exception as e:
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+        line_no = exc_tb.tb_lineno
+        print(f"{fname} - {line_no} - {str(e)}")
+        
         error_logger.log_error(
             f"Ошибка при разделении аудио: {str(e)}",
             "audio", "improved_split_audio"
@@ -392,7 +417,12 @@ def improved_split_audio(audio_data, sr):
                 fragment = np.zeros(fragment_size, dtype=np.float32)
                 fragment[:min(len(audio_data), fragment_size)] = audio_data[:min(len(audio_data), fragment_size)]
                 return [fragment]
-        except:
+        except Exception as inner_e:
+            # Добавляем информацию о внутреннем исключении
+            inner_exc_type, inner_exc_obj, inner_exc_tb = sys.exc_info()
+            inner_fname = os.path.basename(inner_exc_tb.tb_frame.f_code.co_filename)
+            inner_line_no = inner_exc_tb.tb_lineno
+            print(f"{inner_fname} - {inner_line_no} - {str(inner_e)}")
             pass
         
         return []

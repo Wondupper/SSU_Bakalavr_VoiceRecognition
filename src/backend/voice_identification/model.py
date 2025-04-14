@@ -10,6 +10,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import multiprocessing
 from functools import lru_cache
 import hashlib
+import sys
 
 # Константы для оптимизации
 N_JOBS = max(1, multiprocessing.cpu_count() - 1)  # Оставляем 1 ядро для системы
@@ -25,6 +26,10 @@ try:
             tf.config.experimental.set_memory_growth(gpu, True)
         error_logger.log_error(f"Используется GPU: {len(gpus)} устройств", "initialization", "voice_identification")
 except Exception as e:
+    exc_type, exc_obj, exc_tb = sys.exc_info()
+    fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+    line_no = exc_tb.tb_lineno
+    print(f"{fname} - {line_no} - {str(e)}")
     error_logger.log_error(f"Ошибка при настройке GPU: {str(e)}", "initialization", "voice_identification")
 
 class VoiceIdentificationModel:
@@ -156,6 +161,10 @@ class VoiceIdentificationModel:
                 if keys:
                     del self.feature_cache[keys[0]]
             except Exception as e:
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                line_no = exc_tb.tb_lineno
+                print(f"{fname} - {line_no} - {str(e)}")
                 error_logger.log_error(f"Ошибка при очистке кэша признаков: {str(e)}", "training", "voice_identification")
         
         # Кэшируем результат
@@ -204,6 +213,10 @@ class VoiceIdentificationModel:
                 label_onehot[label_index] = 1
                 all_labels.append(label_onehot)
             except Exception as e:
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                line_no = exc_tb.tb_lineno
+                print(f"{fname} - {line_no} - {str(e)}")
                 error_logger.log_error(f"Ошибка при обработке примера: {str(e)}", "training", "voice_identification")
                 continue
         
@@ -340,6 +353,10 @@ class VoiceIdentificationModel:
             )
             
         except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
             error_msg = f"Ошибка при обучении модели: {str(e)}"
             error_logger.log_error(error_msg, "training", "voice_identification")
             
@@ -379,6 +396,10 @@ class VoiceIdentificationModel:
                 min_epoch = min(self.weights_cache.keys())
                 del self.weights_cache[min_epoch]
         except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
             error_logger.log_error(f"Ошибка при кэшировании весов модели: {str(e)}", "training", "voice_identification")
 
     def predict(self, audio_fragments):
@@ -428,6 +449,10 @@ class VoiceIdentificationModel:
                 with ThreadPoolExecutor(max_workers=N_JOBS) as executor:
                     features_list = list(executor.map(extract_features, audio_fragments))
             except Exception as e:
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                line_no = exc_tb.tb_lineno
+                print(f"{fname} - {line_no} - {str(e)}")
                 error_logger.log_error(
                     f"Ошибка при параллельном извлечении признаков: {str(e)}", 
                     "prediction", 
@@ -440,6 +465,10 @@ class VoiceIdentificationModel:
                         features = extract_features(fragment)
                         features_list.append(features)
                     except Exception as e:
+                        exc_type, exc_obj, exc_tb = sys.exc_info()
+                        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                        line_no = exc_tb.tb_lineno
+                        print(f"{fname} - {line_no} - {str(e)}")
                         error_logger.log_error(
                             f"Ошибка при извлечении признаков: {str(e)}",
                             "prediction", 
@@ -453,6 +482,10 @@ class VoiceIdentificationModel:
                     features = extract_features(fragment)
                     features_list.append(features)
                 except Exception as e:
+                    exc_type, exc_obj, exc_tb = sys.exc_info()
+                    fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                    line_no = exc_tb.tb_lineno
+                    print(f"{fname} - {line_no} - {str(e)}")
                     error_logger.log_error(
                         f"Ошибка при извлечении признаков: {str(e)}",
                         "prediction", 
@@ -504,6 +537,10 @@ class VoiceIdentificationModel:
                 processed_features.append(input_data)
                 
             except Exception as e:
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                line_no = exc_tb.tb_lineno
+                print(f"{fname} - {line_no} - {str(e)}")
                 error_logger.log_error(
                     f"Ошибка при подготовке данных для предсказания: {str(e)}",
                     "prediction",
@@ -526,6 +563,10 @@ class VoiceIdentificationModel:
                 confidences_per_fragment.append(confidence)
                 
             except Exception as e:
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+                line_no = exc_tb.tb_lineno
+                print(f"{fname} - {line_no} - {str(e)}")
                 error_logger.log_error(
                     f"Ошибка при предсказании для фрагмента {i}: {str(e)}",
                     "prediction",
@@ -607,6 +648,10 @@ class VoiceIdentificationModel:
                 
             return model_path
         except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
             error_logger.log_error(f"Ошибка при сохранении модели: {str(e)}", "model", "voice_identification")
             return None
     
@@ -650,5 +695,9 @@ class VoiceIdentificationModel:
             
             return True
         except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
+            line_no = exc_tb.tb_lineno
+            print(f"{fname} - {line_no} - {str(e)}")
             error_logger.log_error(f"Ошибка при загрузке модели: {str(e)}", "model", "voice_identification")
             return False

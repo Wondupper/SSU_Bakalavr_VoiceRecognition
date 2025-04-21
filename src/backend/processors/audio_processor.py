@@ -1,26 +1,9 @@
 import os
 import numpy as np
 import librosa
-import soundfile as sf
 from io import BytesIO
-from functools import lru_cache  # Импорт декоратора lru_cache
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor  # Поддержка многопоточности
-import multiprocessing
 from backend.api.error_logger import error_logger
-import sys
-import traceback
-
-# Константы
-AUDIO_FRAGMENT_LENGTH = 3  # длина фрагмента в секундах
-SAMPLE_RATE = 16000  # частота дискретизации
-# Константы для шумоподавления
-NOISE_PERCENTILE = 10  # Персентиль для определения порога шума
-MIN_GAIN = 0.1  # Минимальный коэффициент усиления
-
-# Определяем оптимальное количество процессов/потоков
-# Ограничиваем максимальное количество процессоров для снижения нагрузки на память
-N_JOBS = max(1, min(2, multiprocessing.cpu_count() - 1))  # Не более 2 процессов
-MAX_MEMORY_PER_PROCESS = 512 * 1024 * 1024  # Максимум 512MB на процесс
+from backend.config import SAMPLE_RATE, AUDIO_FRAGMENT_LENGTH
 
 def process_audio(audio_file):
     """
@@ -30,6 +13,12 @@ def process_audio(audio_file):
     try:
         # Проверка объекта файла
         if not audio_file:
+            error_info = error_logger.log_exception(
+                ValueError("Аудиофайл не предоставлен"),
+                "audio_processing",
+                "validation",
+                "Проверка входных данных"
+            )
             raise ValueError("Аудиофайл не предоставлен")
         
         # Сохраняем позицию файла
@@ -43,34 +32,48 @@ def process_audio(audio_file):
         
         # Проверка размера файла
         if len(audio_bytes) == 0:
+            error_info = error_logger.log_exception(
+                ValueError("Пустой аудиофайл"),
+                "audio_processing",
+                "validation",
+                "Проверка размера файла"
+            )
             raise ValueError("Пустой аудиофайл")
         
-        # Проверка формата файла
+        # Проверка формата аудиофайла
         file_extension = os.path.splitext(audio_file.filename)[1].lower()
         if file_extension not in ['.wav', '.mp3', '.ogg', '.flac']:
+            error_info = error_logger.log_exception(
+                ValueError(f"Неподдерживаемый формат аудиофайла: {file_extension}"),
+                "audio_processing",
+                "validation",
+                "Проверка формата файла"
+            )
             raise ValueError(f"Неподдерживаемый формат аудиофайла: {file_extension}")
         
-        # Логируем начало обработки
-        error_logger.log_error(
-            f"Обработка аудиофайла: {audio_file.filename}",
-            "audio", "process_audio"
-        )
+        # Удаляем логирование начала обработки, т.к. это не ошибка
         
         try:
             # Максимально надежная загрузка аудио
             audio_data, sr = librosa.load(BytesIO(audio_bytes), sr=SAMPLE_RATE, res_type='kaiser_fast')
         except Exception as e:
+            error_info = error_logger.log_exception(
+                e,
+                "audio_processing",
+                "audio_loading",
+                "Ошибка при декодировании аудиофайла"
+            )
             raise ValueError(f"Не удалось декодировать аудиофайл: {str(e)}")
         
         # Проверка на пустое аудио
         if len(audio_data) == 0 or np.all(audio_data == 0):
+            error_info = error_logger.log_exception(
+                ValueError("Аудиофайл не содержит данных"),
+                "audio_processing",
+                "validation",
+                "Проверка содержимого аудио"
+            )
             raise ValueError("Аудиофайл не содержит данных")
-        
-        # Логируем информацию о загруженном файле
-        error_logger.log_error(
-            f"Аудио загружено: длина {len(audio_data)}, частота {sr}",
-            "audio", "process_audio"
-        )
         
         # Версия обработки без сложных алгоритмов для максимальной надежности
         try:
@@ -81,7 +84,8 @@ def process_audio(audio_file):
             if np.isnan(audio_data).any() or np.isinf(audio_data).any():
                 error_logger.log_error(
                     "Обнаружены недопустимые значения после нормализации",
-                    "audio", "process_audio"
+                    "audio_processing",
+                    "normalization"
                 )
                 # Загружаем аудио заново и пропускаем обработку
                 audio_data, sr = librosa.load(BytesIO(audio_bytes), sr=SAMPLE_RATE)
@@ -94,7 +98,8 @@ def process_audio(audio_file):
                 if np.isnan(audio_data).any() or np.isinf(audio_data).any():
                     error_logger.log_error(
                         "Обнаружены недопустимые значения после удаления шума",
-                        "audio", "process_audio"
+                        "audio_processing",
+                        "noise_removal"
                     )
                     # Загружаем аудио заново и пропускаем дальнейшую обработку
                     audio_data, sr = librosa.load(BytesIO(audio_bytes), sr=SAMPLE_RATE)
@@ -107,20 +112,19 @@ def process_audio(audio_file):
                     if np.isnan(audio_data).any() or np.isinf(audio_data).any() or len(audio_data) < sr * 0.1:
                         error_logger.log_error(
                             f"Проблема после удаления тишины: длина={len(audio_data)}",
-                            "audio", "process_audio"
+                            "audio_processing",
+                            "silence_removal"
                         )
                         # Возвращаемся к нормализованному аудио
                         audio_data, sr = librosa.load(BytesIO(audio_bytes), sr=SAMPLE_RATE)
                         audio_data = normalize_audio(audio_data)
         
         except Exception as e:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-            line_no = exc_tb.tb_lineno
-            print(f"{fname} - {line_no} - {str(e)}")
-            error_logger.log_error(
-                f"Ошибка при обработке аудио: {str(e)}",
-                "audio", "process_audio"
+            error_info = error_logger.log_exception(
+                e,
+                "audio_processing",
+                "processing",
+                "Ошибка при обработке аудио"
             )
             # Используем прямую загрузку без обработки при любой ошибке
             audio_data, sr = librosa.load(BytesIO(audio_bytes), sr=SAMPLE_RATE)
@@ -128,9 +132,11 @@ def process_audio(audio_file):
         # Проверка размера аудио перед разделением
         min_length = int(AUDIO_FRAGMENT_LENGTH * sr * 0.25)
         if len(audio_data) < min_length:
-            error_logger.log_error(
-                f"Аудио слишком короткое для разделения: {len(audio_data)} < {min_length}",
-                "audio", "process_audio"
+            error_info = error_logger.log_exception(
+                ValueError(f"Аудио слишком короткое для обработки: {len(audio_data) / sr:.2f} секунд"),
+                "audio_processing",
+                "validation",
+                "Проверка длительности аудио"
             )
             raise ValueError(f"Аудио слишком короткое для обработки: {len(audio_data) / sr:.2f} секунд")
         
@@ -140,7 +146,8 @@ def process_audio(audio_file):
         if not audio_fragments:
             error_logger.log_error(
                 "Не удалось получить фрагменты, создаем один фрагмент вручную",
-                "audio", "process_audio"
+                "audio_processing",
+                "audio_splitting"
             )
             # Создаем хотя бы один фрагмент, если разделение не удалось
             fragment_size = int(AUDIO_FRAGMENT_LENGTH * sr)
@@ -152,22 +159,16 @@ def process_audio(audio_file):
             
             audio_fragments = [fragment]
         
-        # Логируем успешное завершение
-        error_logger.log_error(
-            f"Обработка завершена: получено {len(audio_fragments)} фрагментов",
-            "audio", "process_audio"
-        )
-        
         return audio_fragments
         
     except Exception as e:
-        exc_type, exc_obj, exc_tb = sys.exc_info()
-        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-        line_no = exc_tb.tb_lineno
-        print(f"{fname} - {line_no} - {str(e)}")
-        error_message = f"Критическая ошибка обработки аудио: {str(e)}"
-        error_logger.log_error(error_message, "audio", "process_audio")
-        raise ValueError(error_message)
+        error_info = error_logger.log_exception(
+            e,
+            "audio_processing",
+            "process_audio",
+            "Ошибка обработки аудио"
+        )
+        raise
 
 def normalize_audio(audio_data):
     """
@@ -242,28 +243,21 @@ def enhanced_noise_removal(audio_data):
         return audio_denoised
         
     except Exception as e:
-        exc_type, exc_obj, exc_tb = sys.exc_info()
-        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-        line_no = exc_tb.tb_lineno
-        print(f"{fname} - {line_no} - {str(e)}")
-        
-        error_logger.log_error(
-            f"Ошибка при удалении шума: {str(e)}", 
-            "audio", "enhanced_noise_removal"
+        error_info = error_logger.log_exception(
+            e,
+            "audio_processing",
+            "audio_processing",
+            "noise_removal",
+            "Ошибка при удалении шума"
         )
-        # В случае ошибки возвращаем исходный сигнал
-        return audio_data
+        return audio_data  # Возвращаем исходные данные в случае ошибки
 
 def enhanced_silence_removal(audio_data, sr):
     """
-    Удаление тишины с использованием стандартных функций библиотеки librosa
+    Улучшенное удаление тишины с адаптивным порогом
     """
     # Проверка на пустые данные
     if len(audio_data) == 0:
-        return audio_data
-    
-    # Для очень коротких аудио сразу возвращаем исходный сигнал
-    if len(audio_data) < sr * 0.5:  # Меньше 0.5 секунды
         return audio_data
     
     try:
@@ -327,25 +321,28 @@ def enhanced_silence_removal(audio_data, sr):
             return audio_data
     
     except Exception as e:
-        exc_type, exc_obj, exc_tb = sys.exc_info()
-        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-        line_no = exc_tb.tb_lineno
-        print(f"{fname} - {line_no} - {str(e)}")
-        
-        error_logger.log_error(
-            f"Ошибка при удалении тишины: {str(e)}",
-            "audio", "enhanced_silence_removal"
+        error_info = error_logger.log_exception(
+            e,
+            "audio_processing",
+            "audio_processing",
+            "silence_removal",
+            "Ошибка при удалении тишины"
         )
-        # В случае любой ошибки возвращаем исходный сигнал
-        return audio_data
+        return audio_data  # Возвращаем исходные данные в случае ошибки
 
 def improved_split_audio(audio_data, sr):
     """
-    Максимально простая и надежная функция разделения аудио на фрагменты
+    Разделение аудио на фрагменты фиксированной длины
+    с перекрытием для лучшего качества
     """
-    # Проверка на пустые данные
-    if audio_data is None or len(audio_data) == 0:
-        error_logger.log_error("Пустой аудиосигнал при разделении на фрагменты", "audio", "improved_split_audio")
+    if len(audio_data) == 0:
+        error_info = error_logger.log_exception(
+            ValueError("Пустые аудиоданные"),
+            "audio_processing",
+            "audio_processing",
+            "audio_splitting",
+            "Проверка входных данных"
+        )
         return []
     
     try:
@@ -402,37 +399,14 @@ def improved_split_audio(audio_data, sr):
                 fragment[:min(len(audio_data), fragment_size)] = audio_data[:min(len(audio_data), fragment_size)].copy()
                 fragments.append(fragment)
         
-        # Логируем результат
-        error_logger.log_error(
-            f"Аудио разделено на {len(fragments)} фрагментов",
-            "audio", "improved_split_audio"
-        )
-        
         return fragments
         
     except Exception as e:
-        exc_type, exc_obj, exc_tb = sys.exc_info()
-        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-        line_no = exc_tb.tb_lineno
-        print(f"{fname} - {line_no} - {str(e)}")
-        
-        error_logger.log_error(
-            f"Ошибка при разделении аудио: {str(e)}",
-            "audio", "improved_split_audio"
+        error_info = error_logger.log_exception(
+            e,
+            "audio_processing",
+            "audio_processing",
+            "audio_splitting",
+            "Ошибка при разделении аудио на фрагменты"
         )
-        # В случае исключения пытаемся вернуть хотя бы минимальный результат
-        try:
-            fragment_size = int(AUDIO_FRAGMENT_LENGTH * sr)
-            if len(audio_data) >= fragment_size * 0.25:
-                fragment = np.zeros(fragment_size, dtype=np.float32)
-                fragment[:min(len(audio_data), fragment_size)] = audio_data[:min(len(audio_data), fragment_size)]
-                return [fragment]
-        except Exception as inner_e:
-            # Добавляем информацию о внутреннем исключении
-            inner_exc_type, inner_exc_obj, inner_exc_tb = sys.exc_info()
-            inner_fname = os.path.basename(inner_exc_tb.tb_frame.f_code.co_filename)
-            inner_line_no = inner_exc_tb.tb_lineno
-            print(f"{inner_fname} - {inner_line_no} - {str(inner_e)}")
-            pass
-        
-        return []
+        return []  # Возвращаем пустой список в случае ошибки

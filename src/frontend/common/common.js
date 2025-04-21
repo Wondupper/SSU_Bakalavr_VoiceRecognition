@@ -159,28 +159,7 @@ function initIntervals() {
     // Запускаем проверку статуса моделей
     intervals.statusCheck = setInterval(checkModelStatus, 5000);
     
-    // Запускаем проверку ошибок на странице администратора
-    if (window.location.pathname === '/panel') {
-        const errorContainer = document.getElementById('system-errors');
-        if (errorContainer) {
-            intervals.errorCheck = setInterval(() => checkSystemErrors(errorContainer), 10000);
-            // Выполняем проверку сразу при загрузке
-            checkSystemErrors(errorContainer);
-        }
-    }
-    
-    // Проверяем ошибки обучения на соответствующих страницах
-    if (window.location.pathname === '/training') {
-        const statusMessage = document.getElementById('status-message');
-        if (statusMessage) {
-            startTrainingErrorsCheck('voice_id', statusMessage);
-        }
-    } else if (window.location.pathname === '/emtraining') {
-        const statusMessage = document.getElementById('status-message');
-        if (statusMessage) {
-            startTrainingErrorsCheck('emotion', statusMessage);
-        }
-    }
+    // Примечание: проверка ошибок отключена, т.к. эндпоинты /errors удалены
 }
 
 // Функция для очистки всех интервалов
@@ -272,65 +251,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Функция для проверки системных ошибок
 function checkSystemErrors(displayElement = null) {
-    // Запрашиваем последние ошибки от API
-    fetch('/api/errors?limit=10')
-        .then(response => response.json())
-        .then(data => {
-            const errors = data.errors;
-            
-            // Фильтруем ошибки, исключая ошибки обучения и обработки
-            const systemErrors = errors.filter(error => 
-                !(
-                    (error.type === "training" || error.type === "processing") && 
-                    (error.module.includes('voice') || 
-                     error.module.includes('emot') || 
-                     error.module === 'dataset_creator' ||
-                     error.module === 'augmentation')
-                )
-            );
-            
-            // Если есть системные ошибки и указан элемент для отображения
-            if (systemErrors.length > 0 && displayElement) {
-                const errorsList = systemErrors.map(error => {
-                    const date = new Date(error.timestamp * 1000).toLocaleString();
-                    return `<div class="error-item">
-                        <span class="error-time">${date}</span>
-                        <span class="error-module">${error.module || 'Система'}</span>: 
-                        <span class="error-message">${error.message}</span>
-                    </div>`;
-                }).join('');
-                
-                displayElement.innerHTML = `<div class="system-errors">
-                    <h4>Системные уведомления:</h4>
-                    ${errorsList}
-                </div>`;
-                
-                displayElement.style.display = 'block';
-            }
-        })
-        .catch(error => logErrorToSystem(error.message || "Ошибка получения списка ошибок", "system_errors"));
+    // Функция отключена, т.к. эндпоинт /api/errors удален
+    if (displayElement) {
+        displayElement.style.display = 'none';
+    }
 }
 
 // Определяем глобальную функцию логирования ошибок
 window.logErrorToSystem = function(error, module = "frontend", location = window.location.pathname) {
-    // Попытка отправить ошибку на сервер
-    try {
-        fetch('/api/errors/log', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                message: error.toString(),
-                module: module,
-                location: location
-            })
-        }).catch(() => {
-            // Игнорируем ошибки при отправке ошибок
-        });
-    } catch (e) {
-        // Игнорируем ошибки при отправке ошибок
-    }
+    // Функция отключена, т.к. эндпоинт /api/errors/log удален
+    // Логируем ошибку в консоль для отладки
+    console.error(`[${module}] [${location}] Ошибка: ${error.toString()}`);
 };
 
 // Глобальный обработчик ошибок
@@ -550,6 +481,7 @@ function updateProgressBar(data) {
 
 // Добавляем функцию для остановки мониторинга ошибок обучения
 function stopTrainingErrorsCheck() {
+    // Функция оставлена для совместимости
     if (intervals.trainingErrorsCheck) {
         clearInterval(intervals.trainingErrorsCheck);
         intervals.trainingErrorsCheck = null;
@@ -563,73 +495,23 @@ function checkTrainingErrors(modelType, displayElement) {
         return;
     }
     
-    // Запрашиваем последние ошибки от API
-    fetch('/api/errors?limit=10')
-        .then(response => response.json())
-        .then(data => {
-            const errors = data.errors;
-            
-            // Фильтруем ошибки по типу и модулю
-            const trainingErrors = errors.filter(error => 
-                (error.type === "training" || error.type === "processing" || error.module === "augmentation") && 
-                (modelType === 'all' || 
-                 error.module === modelType || 
-                 error.module.includes(modelType) || 
-                 (modelType === 'voice_id' && error.module.includes('voice')) || 
-                 (modelType === 'emotion' && error.module.includes('emot')) ||
-                 error.module === 'dataset_creator'
-                )
-            );
-            
-            // Если есть ошибки обучения, отображаем их
-            if (trainingErrors.length > 0) {
-                // Показываем самые свежие ошибки (до 3 штук)
-                const errorMessages = trainingErrors.slice(0, 3).map(error => {
-                    const date = new Date(error.timestamp * 1000).toLocaleString();
-                    const message = error.message || "Неизвестная ошибка";
-                    return `<div class="error-item">
-                        <span class="error-time">${date}</span> - 
-                        <span class="error-message">${message}</span>
-                    </div>`;
-                }).join('');
-                
-                displayElement.innerHTML = `<div class="training-errors">
-                    <h4>Обнаружены проблемы:</h4>
-                    ${errorMessages}
-                </div>`;
-                displayElement.className = 'status-message error';
-                displayElement.style.display = 'block';
-            }
-        })
-        .catch(error => {
-            console.error("Ошибка получения списка ошибок:", error);
-            logErrorToSystem(error.message || "Ошибка получения списка ошибок обучения", "training_errors");
-        });
+    // Функция отключена, т.к. эндпоинт /api/errors удален
+    displayElement.style.display = 'none';
 }
 
 // Функция для начала мониторинга ошибок обучения
 function startTrainingErrorsCheck(modelType, displayElement) {
-    console.log(`Запуск мониторинга ошибок для ${modelType}`); // Отладочное сообщение
+    // Функция отключена, т.к. эндпоинт /api/errors удален
+    console.log(`Мониторинг ошибок для ${modelType} отключен`);
     
     // Очищаем предыдущий интервал, если он был
     if (intervals.trainingErrorsCheck) {
         clearInterval(intervals.trainingErrorsCheck);
+        intervals.trainingErrorsCheck = null;
     }
     
-    // Запускаем проверку сразу
-    checkTrainingErrors(modelType, displayElement);
-    
-    // Устанавливаем интервал для периодической проверки
-    intervals.trainingErrorsCheck = setInterval(() => {
-        checkTrainingErrors(modelType, displayElement);
-    }, 5000); // Проверяем каждые 5 секунд
-    
-    // Для обеспечения того, что проверка начнется
-    displayElement.innerHTML = 'Мониторинг ошибок обучения запущен...';
-    displayElement.className = 'status-message info';
-    displayElement.style.display = 'block';
-    
-    setTimeout(() => {
+    // Скрываем элемент отображения
+    if (displayElement) {
         displayElement.style.display = 'none';
-    }, 3000);
+    }
 }

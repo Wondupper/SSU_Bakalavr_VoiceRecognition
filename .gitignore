@@ -45,3 +45,6 @@ logs/
 # System Files
 .DS_Store
 Thumbs.db 
+
+test_input_audiofiles/
+.cursor/

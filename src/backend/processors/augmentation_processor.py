@@ -1,43 +1,28 @@
 import numpy as np
 import librosa
 import random
-from functools import lru_cache  # Добавлен импорт для кэширования
-from concurrent.futures import ProcessPoolExecutor  # Поддержка многопроцессорности
-import multiprocessing
 from backend.api.error_logger import error_logger
-from functools import partial
+from backend.config import (
+    AUGMENTATION_PROCESSOR, SAMPLE_RATE, HOP_LENGTH, AUDIO_FRAGMENT_LENGTH
+)
 import sys
 import os
 import scipy.signal
-import gc
 
-# Константы для оптимизации
-MAX_AUGMENTED_SAMPLES = 1000  # Уменьшено с 5000 до 1000, так как теперь набор увеличивается в 12 раз вместо 90
-N_FFT = 1024         # Размер окна для БПФ (уменьшен с 2048 для предотвращения ошибок памяти)
-HOP_LENGTH = 512
-
-# Определяем оптимальное количество процессов
-# Ограничиваем максимальное количество процессоров для снижения нагрузки на память
-N_JOBS = max(1, min(2, multiprocessing.cpu_count() - 1))  # Не более 2 процессов
-
-# Константы для работы с аудио и аугментации
-SAMPLE_RATE = 16000  # Стандартная частота дискретизации
-MIN_SNR_DB = 5       # Минимальное отношение сигнал/шум для добавления шума
-MAX_SNR_DB = 15      # Максимальное отношение сигнал/шум для добавления шума
-MAX_PITCH_SHIFT = 2  # Максимальное изменение высоты тона (в полутонах)
-MIN_SPEED = 0.7      # Минимальный коэффициент изменения скорости
-MAX_SPEED = 1.5      # Максимальный коэффициент изменения скорости
-# Ограничение по размеру батча для экономии памяти
-MAX_BATCH_SIZE = 8   # Максимальный размер батча для параллельной обработки
+# Используем константы из конфигурационного файла
+MIN_SNR_DB = AUGMENTATION_PROCESSOR['MIN_SNR_DB']
+MAX_SNR_DB = AUGMENTATION_PROCESSOR['MAX_SNR_DB']
+MAX_PITCH_SHIFT = AUGMENTATION_PROCESSOR['MAX_PITCH_SHIFT']
+MIN_SPEED = AUGMENTATION_PROCESSOR['MIN_SPEED']
+MAX_SPEED = AUGMENTATION_PROCESSOR['MAX_SPEED']
 
 # Параметры временного маскирования
-MASK_COUNT_MIN = 2   # Минимальное количество масок
-MASK_COUNT_MAX = 5   # Максимальное количество масок
-MASK_LENGTH_MIN = 0.05  # Минимальная длина маски в секундах
-MASK_LENGTH_MAX = 0.15  # Максимальная длина маски в секундах
+MASK_COUNT_MIN = AUGMENTATION_PROCESSOR['MASK_COUNT_MIN']
+MASK_COUNT_MAX = AUGMENTATION_PROCESSOR['MASK_COUNT_MAX']
+MASK_LENGTH_MIN = AUGMENTATION_PROCESSOR['MASK_LENGTH_MIN']
+MASK_LENGTH_MAX = AUGMENTATION_PROCESSOR['MASK_LENGTH_MAX']
+N_FFT_AUGMENTATION = AUGMENTATION_PROCESSOR['N_FFT_AUGMENTATION']
 
-# Минимальная длина аудиофрагмента, необходимая для обработки
-MIN_AUDIO_LENGTH = 4096  # Равно N_FFT * 2 из dataset_creator.py
 
 def ensure_min_length(audio_fragment):
     """
@@ -52,13 +37,13 @@ def ensure_min_length(audio_fragment):
     """
     if audio_fragment is None or len(audio_fragment) == 0:
         error_logger.log_error("Пустой аудиофрагмент", "augmentation", "ensure_min_length")
-        return np.zeros(MIN_AUDIO_LENGTH)  # Возвращаем тишину минимальной длины
+        return np.zeros(AUDIO_FRAGMENT_LENGTH)  # Возвращаем тишину минимальной длины
         
-    if len(audio_fragment) < MIN_AUDIO_LENGTH:
+    if len(audio_fragment) < AUDIO_FRAGMENT_LENGTH:
         # Используем циклическое повторение (вместо простого дополнения нулями)
         # для сохранения характеристик сигнала
-        multiplier = int(np.ceil(MIN_AUDIO_LENGTH / len(audio_fragment)))
-        extended_fragment = np.tile(audio_fragment, multiplier)[:MIN_AUDIO_LENGTH]
+        multiplier = int(np.ceil(AUDIO_FRAGMENT_LENGTH / len(audio_fragment)))
+        extended_fragment = np.tile(audio_fragment, multiplier)[:AUDIO_FRAGMENT_LENGTH]
         
         error_logger.log_error(
             f"Аудиофрагмент удлинен с {len(audio_fragment)} до {len(extended_fragment)} отсчетов",
@@ -121,17 +106,17 @@ def apply_time_masking(audio_data, sr=SAMPLE_RATE):
         
         return result
         
-        except Exception as e:
+    except Exception as e:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
             line_no = exc_tb.tb_lineno
             print(f"{fname} - {line_no} - {str(e)}")
             
-        error_logger.log_error(
+            error_logger.log_error(
             f"Ошибка при применении временного маскирования: {str(e)}", 
             "augmentation", "apply_time_masking"
         )
-        return audio_data  # В случае ошибки возвращаем исходный аудиофрагмент
+            return audio_data  # В случае ошибки возвращаем исходный аудиофрагмент
 
 def augment_audio(audio_fragments):
     """
@@ -171,9 +156,6 @@ def augment_audio(audio_fragments):
     # Шаг 1: Сохраняем исходные фрагменты
     original_fragments = audio_fragments.copy()
     
-    # Освобождаем память после каждого этапа
-    import gc
-    
     # Группа A: Удаление шума (Пункт 1)
     # Применяем ко всем исходным фрагментам
     denoised_fragments = []
@@ -188,9 +170,6 @@ def augment_audio(audio_fragments):
     
     # Объединяем исходные и обработанные фрагменты (Пункт 1 в спецификации)
     step1_fragments = original_fragments.copy() + denoised_fragments
-    
-    # Освобождаем память
-    gc.collect()
     
     # Группа B1: Замедление записи в 0.8 раза (Пункт 2)
     # Применяем к результатам пункта 1
@@ -223,121 +202,92 @@ def augment_audio(audio_fragments):
     # Объединяем результаты пунктов 2 и 3
     speed_modified_fragments = slowdown_fragments + speedup_fragments
     
-    # Освобождаем память
-    gc.collect()
+    # Пункт 2: К набору из пункта 1 применяем маскирование к результатам изменения скорости
+    # Применяем к slowdown_fragments
+    result_fragments = []
     
-    # Группа C: Временное маскирование (Пункт 4)
-    # Применяем к результатам пунктов 2 и 3
-    masked_fragments = []
+    for fragment in slowdown_fragments:
+        try:
+            # Добавляем исходный
+            result_fragments.append(fragment)
+            
+            # Добавляем с временным маскированием
+            masked_fragment = apply_time_masking(fragment)
+            # Проверяем длину после маскирования
+            masked_fragment = ensure_min_length(masked_fragment)
+            result_fragments.append(masked_fragment)
+        except Exception as e:
+            error_logger.log_error(f"Ошибка маскирования: {str(e)}", "augmentation", "augment_audio")
     
-    # Используем батчи для снижения расхода памяти
-    for i in range(0, len(speed_modified_fragments), MAX_BATCH_SIZE):
-        batch = speed_modified_fragments[i:i + MAX_BATCH_SIZE]
-        for fragment in batch:
-            try:
-                masked_fragment = apply_time_masking(fragment)
-                # Проверяем длину после маскирования
-                masked_fragment = ensure_min_length(masked_fragment)
-                masked_fragments.append(masked_fragment)
-            except Exception as e:
-                error_logger.log_error(f"Ошибка временного маскирования: {str(e)}", "augmentation", "augment_audio")
+    # Пункт 3: К набору из пункта 1 применяем маскирование к результатам изменения скорости
+    # Применяем к speedup_fragments
+    for fragment in speedup_fragments:
+        try:
+            # Добавляем исходный
+            result_fragments.append(fragment)
+            
+            # Добавляем с временным маскированием
+            masked_fragment = apply_time_masking(fragment)
+            # Проверяем длину после маскирования
+            masked_fragment = ensure_min_length(masked_fragment)
+            result_fragments.append(masked_fragment)
+        except Exception as e:
+            error_logger.log_error(f"Ошибка маскирования: {str(e)}", "augmentation", "augment_audio")
         
-        # Освобождаем память после каждого батча
-        gc.collect()
-    
-    # Объединяем все результаты:
-    # 1. Исходные фрагменты (original_fragments)
-    # 2. Фрагменты с удаленным шумом (denoised_fragments)
-    # 3. Замедленные фрагменты из пунктов 1 и 2 (slowdown_fragments)
-    # 4. Ускоренные фрагменты из пунктов 1 и 2 (speedup_fragments)
-    # 5. Маскированные фрагменты из пунктов 3 и 4 (masked_fragments)
-    result_fragments = original_fragments + denoised_fragments + slowdown_fragments + speedup_fragments + masked_fragments
-    
-    # Сборка мусора перед возвратом результата
-    gc.collect()
-    
-    # Если результат превышает допустимый размер, случайно выбираем подмножество
-    if len(result_fragments) > MAX_AUGMENTED_SAMPLES:
-        import random
-        result_fragments = random.sample(result_fragments, MAX_AUGMENTED_SAMPLES)
-        error_logger.log_error(
-            f"Результат аугментации превысил лимит и был ограничен до {MAX_AUGMENTED_SAMPLES} фрагментов",
-            "augmentation", "augment_audio"
-        )
-    
-    # Логирование результатов для отладки
-    error_logger.log_error(
-        f"Аугментация создала {len(result_fragments)} фрагментов из {len(audio_fragments)} исходных",
-        "augmentation", "augment_audio"
-    )
-    
     return result_fragments
 
 def remove_noise(audio_data):
     """
-    Оптимизированная функция удаления шума для ускорения обработки
+    Удаление шума с использованием спектрального маскирования
+    и минимально вычислительного подхода
     """
     # Проверка на пустые данные
-    if len(audio_data) == 0:
+    if audio_data is None or len(audio_data) == 0:
         return audio_data
-    
-    # Оптимизация: пропускаем обработку для коротких фрагментов
+        
+    # Для очень коротких аудио пропускаем шумоподавление
     if len(audio_data) < 2048:
         return audio_data
-    
+        
     try:
-    # Расчет спектрограммы с использованием оптимизированных параметров
-    n_fft = N_FFT
-    
+        # Расчет спектрограммы с использованием оптимизированных параметров
+        n_fft = N_FFT_AUGMENTATION
+        
         # Предварительно проверяем размерность и подгоняем размер окна к длине аудио
-        if n_fft > len(audio_data):
-            n_fft = 2 ** int(np.log2(len(audio_data)))
-            if n_fft < 512:  # слишком маленькое окно бесполезно для шумоподавления
-                return audio_data
+        if len(audio_data) < n_fft:
+            # Для очень коротких аудио используем меньший размер окна
+            n_fft = 512  # Если аудио короче, используем меньшее окно
+            
+        # Получаем спектрограмму мощности
+        stft = librosa.stft(audio_data, n_fft=n_fft, hop_length=HOP_LENGTH)
+        magnitude = np.abs(stft)
+        power = magnitude ** 2
         
-        # Корректный padding нужной длины
-        padding_length = n_fft - (len(audio_data) % n_fft) if len(audio_data) % n_fft else 0
-        padded_audio = np.pad(audio_data, (0, padding_length))
+        # Адаптивное определение шума с оптимизированными параметрами
+        noise_percentile = 15  # Нижний персентиль величин, вероятно, является шумом
         
-        # Используем более безопасный метод для расчета STFT
-        # Создаем окно Ханна подходящего размера
-        window = np.hanning(n_fft).astype(np.float32)
-        
-        # Делим сигнал на фреймы подходящего размера
-        # и применяем быстрое преобразование Фурье
-        hop = n_fft // 4
-        frames = librosa.util.frame(padded_audio, frame_length=n_fft, hop_length=hop)
-        frames = frames.T * window  # Применяем оконную функцию
-        stft = np.fft.rfft(frames, axis=1)
-    
-    mag = np.abs(stft)
-    phase = np.angle(stft)
-    
-    # Адаптивное определение шума с оптимизированными параметрами
-    noise_percentile = 15  # Нижний персентиль величин, вероятно, является шумом
-    
         # Вычисление порога шума
-    noise_thresh = np.percentile(mag, noise_percentile, axis=0)
-    
-    # Применяем мягкое спектральное вычитание с адаптивным порогом и векторизацией
-    gain = 1.0 - (noise_thresh / (mag + 1e-10))
-    gain = np.maximum(0.1, gain)  # Ограничиваем минимальное значение коэффициента усиления
-    mag = mag * gain
-    
-    # Оптимизированное обратное преобразование
-    stft_denoised = mag * np.exp(1j * phase)
+        noise_thresh = np.percentile(magnitude, noise_percentile, axis=0)
+        
+        # Применяем мягкое спектральное вычитание с адаптивным порогом и векторизацией
+        gain = 1.0 - (noise_thresh / (magnitude + 1e-10))
+        gain = np.maximum(0.1, gain)  # Ограничиваем минимальное значение коэффициента усиления
+        mag = magnitude * gain
+        
+        # Оптимизированное обратное преобразование
+        stft_denoised = mag * np.exp(1j * np.angle(stft))
         denoised_frames = np.fft.irfft(stft_denoised)
         
         # Восстанавливаем сигнал с overlap-add
-        audio_denoised = np.zeros(len(padded_audio))
-        window_sum = np.zeros(len(padded_audio))
+        audio_denoised = np.zeros(len(audio_data))
+        window_sum = np.zeros(len(audio_data))
         
         for i, frame in enumerate(denoised_frames):
-            start = i * hop
+            start = i * (n_fft // 4)
             end = start + n_fft
             if end <= len(audio_denoised):
-                audio_denoised[start:end] += frame * window
-                window_sum[start:end] += window ** 2
+                audio_denoised[start:end] += frame
+                window_sum[start:end] += 1
         
         # Нормализуем по весу окон и обрезаем до исходной длины
         idx = window_sum > 1e-10
@@ -388,7 +338,7 @@ def fast_change_speed(audio_data, speed_factor):
             
         # Используем быстрое и простое ресемплирование
         indices = np.linspace(0, len(audio_data) - 1, output_length)
-            indices = indices.astype(np.int32)
+        indices = indices.astype(np.int32)
         result = audio_data[indices]
         return result
             
@@ -404,7 +354,7 @@ def fast_change_speed(audio_data, speed_factor):
         )
         return audio_data
 
-def fast_change_pitch(audio_data, n_steps, sr=16000):
+def fast_change_pitch(audio_data, n_steps, sr=SAMPLE_RATE):
     """
     Оптимизированное изменение высоты тона аудиоданных
     с использованием numpy и scipy, адаптировано для многопроцессорной обработки
@@ -467,124 +417,98 @@ def fast_change_pitch(audio_data, n_steps, sr=16000):
 
 def augment_audio_data(audio_fragments, labels, augmentation_factor=2):
     """
-    Расширяет набор аудиоданных с помощью аугментации.
-    Параллельно обрабатывает аудиофрагменты, применяя различные техники аугментации.
+    Аугментирует аудиофрагменты, создавая несколько версий с различными преобразованиями
     
     Args:
-        audio_fragments: список numpy массивов с аудиоданными
+        audio_fragments: список аудиофрагментов (numpy arrays)
         labels: список соответствующих меток
-        augmentation_factor: во сколько раз увеличить набор данных (по умолчанию 2)
+        augmentation_factor: во сколько раз увеличить датасет
         
     Returns:
-        Tuple[List[np.ndarray], List[Any]]: кортеж (аугментированные аудиофрагменты, соответствующие метки)
+        tuple (augmented_fragments, augmented_labels) с аугментированными данными
     """
     try:
-        if not audio_fragments or len(audio_fragments) == 0:
-            error_logger.log_error("Ошибка: пустой список аудиофрагментов", "augmentation", "augment_audio_data")
-            return audio_fragments, labels
+        if not audio_fragments or not labels:
+            return [], []
             
-        # Проверяем соответствие количества фрагментов и меток
+        # Проверяем наличие данных и соответствие размеров
         if len(audio_fragments) != len(labels):
             error_logger.log_error(
-                f"Ошибка: количество аудиофрагментов ({len(audio_fragments)}) не соответствует количеству меток ({len(labels)})",
+                f"Несоответствие размеров: {len(audio_fragments)} фрагментов и {len(labels)} меток",
                 "augmentation", "augment_audio_data"
             )
             return audio_fragments, labels
             
         start_count = len(audio_fragments)
-        target_count = start_count * augmentation_factor
-        augmented_fragments = audio_fragments.copy()
-        augmented_labels = labels.copy()
         
-        # Количество аудиофрагментов, которые нужно аугментировать
-        fragments_to_augment = target_count - start_count
-        
-        # Если датасет слишком маленький, выполняем последовательную обработку
-        if start_count < 4 or fragments_to_augment < 4 or N_JOBS <= 1:
-            for _ in range(fragments_to_augment):
-                # Выбираем случайный индекс из исходного набора
-                original_idx = random.randint(0, start_count - 1)
-                
-                # Выбираем случайную технику аугментации
-                augmentation_technique = random.choice([
-                    'pitch_shift', 'time_stretch', 'add_noise', 'combined'
-                ])
-                
-                # Применяем выбранную технику
-                original_audio = audio_fragments[original_idx]
-                augmented_audio = apply_augmentation(original_audio, augmentation_technique)
-                
-                if augmented_audio is not None:
-                    augmented_fragments.append(augmented_audio)
-                    augmented_labels.append(labels[original_idx])
-        else:
-            # Подготавливаем параметры для параллельной обработки
-            augmentation_tasks = []
-            for _ in range(fragments_to_augment):
-                original_idx = random.randint(0, start_count - 1)
-                augmentation_technique = random.choice([
-                    'pitch_shift', 'time_stretch', 'add_noise', 'combined'
-                ])
-                augmentation_tasks.append((original_idx, audio_fragments[original_idx], augmentation_technique))
+        # Если слишком мало фрагментов, просто дублируем их
+        if start_count < 4:
+            result_fragments = []
+            result_labels = []
             
-            # Используем ProcessPoolExecutor для параллельной обработки
-            try:
-                with ProcessPoolExecutor(max_workers=N_JOBS) as executor:
-                    # Определяем вспомогательную функцию для параллельной обработки
-                    def process_augmentation(task):
-                        idx, audio, technique = task
-                        try:
-                            augmented = apply_augmentation(audio, technique)
-                            return (idx, augmented)
-                        except Exception as e:
-                            exc_type, exc_obj, exc_tb = sys.exc_info()
-                            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-                            line_no = exc_tb.tb_lineno
-                            print(f"{fname} - {line_no} - {str(e)}")
-                            
-                            error_logger.log_error(
-                                f"Ошибка аугментации фрагмента: {str(e)}", 
-                                "augmentation", "process_augmentation"
-                            )
-                            return (idx, None)
+            for i in range(min(12, augmentation_factor)):
+                for frag, label in zip(audio_fragments, labels):
+                    result_fragments.append(frag.copy())
+                    result_labels.append(label)
                     
-                    # Запускаем параллельную обработку
-                    results = list(executor.map(process_augmentation, augmentation_tasks))
-                    
-                    # Обрабатываем результаты
-                    for idx, augmented_audio in results:
-                        if augmented_audio is not None:
-                            augmented_fragments.append(augmented_audio)
-                            augmented_labels.append(labels[idx])
-            except Exception as e:
-                exc_type, exc_obj, exc_tb = sys.exc_info()
-                fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-                line_no = exc_tb.tb_lineno
-                print(f"{fname} - {line_no} - {str(e)}")
-                
-                error_logger.log_error(
-                    f"Ошибка параллельной аугментации: {str(e)}", 
-                    "augmentation", "augment_audio_data"
-                )
-                # В случае ошибки возвращаем текущий (возможно частично аугментированный) набор
-                
-        final_count = len(augmented_fragments)
-        if final_count < target_count:
             error_logger.log_error(
-                f"Предупреждение: итоговый размер набора данных ({final_count}) меньше ожидаемого ({target_count})",
+                f"Слишком мало исходных фрагментов ({start_count}), просто дублируем их",
                 "augmentation", "augment_audio_data"
             )
+            return result_fragments, result_labels
+           
+        # Готовим данные для аугментации
+        fragments_by_label = {}
+        
+        for frag, label in zip(audio_fragments, labels):
+            if label not in fragments_by_label:
+                fragments_by_label[label] = []
+            fragments_by_label[label].append(frag)
+            
+        # Аугментируем фрагменты по каждой метке
+        augmented_fragments = []
+        augmented_labels = []
+        fragments_to_augment = sum(len(frags) for frags in fragments_by_label.values())
+        
+        # Применяем аугментацию последовательно
+        for label, frags in fragments_by_label.items():
+            # Применяем аугментацию напрямую
+            augmented = augment_audio(frags)
+            
+            # Добавляем результаты
+            augmented_fragments.extend(augmented)
+            augmented_labels.extend([label] * len(augmented))
+                
+            # Добавляем оригинальные фрагменты
+            augmented_fragments.extend(frags)
+            augmented_labels.extend([label] * len(frags))
+                
+        # Проверяем результаты
+        if not augmented_fragments:
+            error_logger.log_error(
+                "Аугментация не дала результатов, возвращаем исходные данные",
+                "augmentation", "augment_audio_data"
+            )
+            return audio_fragments, labels
+            
+        # Логгируем
+        error_logger.log_error(
+            f"Аугментация завершена: {start_count} -> {len(augmented_fragments)} фрагментов",
+            "augmentation", "augment_audio_data"
+        )
             
         return augmented_fragments, augmented_labels
-        
+            
     except Exception as e:
         exc_type, exc_obj, exc_tb = sys.exc_info()
         fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
         line_no = exc_tb.tb_lineno
         print(f"{fname} - {line_no} - {str(e)}")
-        
-        error_logger.log_error(f"Ошибка аугментации аудиоданных: {str(e)}", "augmentation", "augment_audio_data")
-        # В случае ошибки возвращаем исходный набор
+            
+        error_logger.log_error(
+            f"Ошибка аугментации: {str(e)}",
+            "augmentation", "augment_audio_data"
+        )
         return audio_fragments, labels
 
 def apply_augmentation(audio, technique):
@@ -710,97 +634,66 @@ def add_noise_with_snr(audio, snr_db):
         error_logger.log_error(f"Ошибка при добавлении шума с SNR: {str(e)}", "augmentation", "add_noise_with_snr")
         return audio
 
-def batch_augment(audio_fragments, labels, augmentation_techniques, parallel=True):
+def batch_augment(audio_fragments, labels, augmentation_techniques):
     """
-    Выполняет пакетную аугментацию аудиоданных с применением набора техник.
-    Поддерживает параллельную обработку для больших наборов данных.
+    Применяет список техник аугментации к аудиофрагментам в пакетном режиме
     
     Args:
-        audio_fragments: список numpy массивов с аудиоданными
+        audio_fragments: список аудиофрагментов (numpy arrays)
         labels: список соответствующих меток
-        augmentation_techniques: список техник аугментации для применения
-        parallel: использовать ли параллельную обработку
+        augmentation_techniques: список функций аугментации
         
     Returns:
-        Tuple[List[np.ndarray], List[Any]]: кортеж (аугментированные аудиофрагменты, соответствующие метки)
+        tuple (augmented_fragments, augmented_labels) с аугментированными данными
     """
     try:
-        if not audio_fragments or len(audio_fragments) == 0:
+        # Проверяем на корректность входных данных
+        if not audio_fragments or not labels:
+            return [], []
+            
+        if len(audio_fragments) != len(labels):
+            error_logger.log_error(
+                "Количество аудиофрагментов и меток не совпадает",
+                "augmentation", "batch_augment"
+            )
             return audio_fragments, labels
             
-        if not augmentation_techniques or len(augmentation_techniques) == 0:
-            return audio_fragments, labels
+        # Теперь выполняем последовательно для всех фрагментов
+        result_fragments = []
+        result_labels = []
             
-        augmented_fragments = []
-        augmented_labels = []
-        
-        # Для каждой техники создаем копии всех аудиофрагментов с этой аугментацией
+        # Добавляем исходные фрагменты
+        result_fragments.extend(audio_fragments)
+        result_labels.extend(labels)
+            
+        # Применяем каждую технику аугментации
         for technique in augmentation_techniques:
-            # Если можно выполнить параллельную обработку и у нас достаточно данных
-            if parallel and len(audio_fragments) >= 4 and N_JOBS > 1:
-                try:
-                    # Создаем частичную функцию для конкретной техники
-                    aug_func = partial(apply_augmentation, technique=technique)
-                    
-                    # Параллельно применяем аугментацию ко всем фрагментам
-                    with ProcessPoolExecutor(max_workers=N_JOBS) as executor:
-                        augmented_batch = list(executor.map(aug_func, audio_fragments))
+            technique_name = technique.__name__ if hasattr(technique, "__name__") else "unknown_technique"
+                
+            try:
+                for i, (fragment, label) in enumerate(zip(audio_fragments, labels)):
+                    # Применяем технику аугментации
+                    augmented = apply_augmentation(fragment, technique)
                         
-                    # Фильтруем None результаты и добавляем в общий список
-                    for i, augmented in enumerate(augmented_batch):
-                        if augmented is not None:
-                            augmented_fragments.append(augmented)
-                            augmented_labels.append(labels[i])
-                            
-                except Exception as e:
-                    exc_type, exc_obj, exc_tb = sys.exc_info()
-                    fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-                    line_no = exc_tb.tb_lineno
-                    print(f"{fname} - {line_no} - {str(e)}")
+                    # Проверяем результат
+                    if augmented is not None and len(augmented) > 0:
+                        # Добавляем новый фрагмент
+                        result_fragments.append(augmented)
+                        result_labels.append(label)
+            except Exception as e:
+                error_logger.log_error(
+                    f"Ошибка при применении техники {technique_name}: {str(e)}",
+                    "augmentation", "batch_augment"
+                )
                     
-                    error_logger.log_error(
-                        f"Ошибка при параллельной пакетной аугментации: {str(e)}", 
-                        "augmentation", "batch_augment"
-                    )
-                    # В случае ошибки выполняем последовательную обработку
-                    for i, audio in enumerate(audio_fragments):
-                        try:
-                            augmented = apply_augmentation(audio, technique)
-                            if augmented is not None:
-                                augmented_fragments.append(augmented)
-                                augmented_labels.append(labels[i])
-                        except Exception as e2:
-                            error_logger.log_error(
-                                f"Ошибка при обработке фрагмента {i}: {str(e2)}", 
-                                "augmentation", "batch_augment"
-                            )
-                            continue
-            else:
-                # Последовательная обработка
-                for i, audio in enumerate(audio_fragments):
-                    try:
-                        augmented = apply_augmentation(audio, technique)
-                        if augmented is not None:
-                            augmented_fragments.append(augmented)
-                            augmented_labels.append(labels[i])
-                    except Exception as e:
-                        error_logger.log_error(
-                            f"Ошибка при обработке фрагмента {i} с техникой {technique}: {str(e)}", 
-                            "augmentation", "batch_augment"
-                        )
-                        continue
-        
-        # Объединяем исходный и аугментированный наборы
-        all_fragments = audio_fragments + augmented_fragments
-        all_labels = labels + augmented_labels
-        
-        return all_fragments, all_labels
-        
+        # Логгируем результаты
+        error_logger.log_error(
+            f"Пакетная аугментация завершена: {len(audio_fragments)} -> {len(result_fragments)} фрагментов",
+            "augmentation", "batch_augment"
+        )
+            
+        return result_fragments, result_labels
+            
     except Exception as e:
-        exc_type, exc_obj, exc_tb = sys.exc_info()
-        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-        line_no = exc_tb.tb_lineno
-        print(f"{fname} - {line_no} - {str(e)}")
-        
         error_logger.log_error(f"Ошибка при пакетной аугментации: {str(e)}", "augmentation", "batch_augment")
         return audio_fragments, labels

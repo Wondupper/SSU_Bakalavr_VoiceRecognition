@@ -3,17 +3,16 @@ from werkzeug.utils import secure_filename
 import os
 import time
 import random
-from backend.processors.audio_processor import process_audio, enhanced_silence_removal, enhanced_noise_removal, improved_split_audio as split_audio
-from backend.processors.dataset_creator import create_voice_id_dataset, create_emotion_dataset
-from backend.voice_identification.model import VoiceIdentificationModel
-from backend.emotion_recognition.model import EmotionRecognitionModel
+from backend.processors.audio_processors.audio_processor import process_audio, enhanced_silence_removal, enhanced_noise_removal, improved_split_audio as split_audio
+from backend.processors.dataset_creators.dataset_creator import create_voice_id_dataset, create_emotion_dataset
+from backend.ml.voice_identification.model import VoiceIdentificationModel
+from backend.ml.emotion_recognition.model import EmotionRecognitionModel
 from backend.api.error_logger import error_logger
 from backend.config import SAMPLE_RATE, EMOTIONS
 import zipfile
 import io
 import sys
 import librosa
-from datetime import datetime
 
 def handle_error(error, module="api", location="general", status_code=400):
     """

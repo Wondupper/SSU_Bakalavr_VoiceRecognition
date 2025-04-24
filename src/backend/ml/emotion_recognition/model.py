@@ -4,7 +4,7 @@ import tensorflow as tf
 from backend.api.error_logger import error_logger
 from backend.config import EMOTIONS
 import sys
-from backend.processors.dataset_creator import extract_features
+from backend.processors.dataset_creators.dataset_creator import extract_features
 
 class EmotionRecognitionModel:
     """

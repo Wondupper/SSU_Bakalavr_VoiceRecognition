@@ -1,9 +1,8 @@
-import os
 import numpy as np
 import tensorflow as tf
 from backend.api.error_logger import error_logger
-import sys
 from backend.processors.dataset_creators.dataset_creator import extract_features
+from backend.ml.shared.model_loader_or_saver import save_model, load_model
 
 
 class VoiceIdentificationModel:
@@ -133,7 +132,12 @@ class VoiceIdentificationModel:
             return model
             
         except Exception as e:
-            print(f"{sys.exc_info()[2].tb_frame.f_code.co_filename} - {sys.exc_info()[2].tb_lineno} - {str(e)}")
+            error_logger.log_exception(
+                e,
+                "voice_identification",
+                "build_model",
+                "Ошибка при построении модели"
+            )
             return None
                 
     def train(self, audio_fragments, labels):
@@ -150,9 +154,19 @@ class VoiceIdentificationModel:
         try:
             # Проверка входных данных
             if not audio_fragments or not labels:
+                error_logger.log_error(
+                    "Пустые входные данные для обучения",
+                    "voice_identification",
+                    "train"
+                )
                 return False
                 
             if len(audio_fragments) != len(labels):
+                error_logger.log_error(
+                    "Количество аудиофрагментов не соответствует количеству меток",
+                    "voice_identification",
+                    "train"
+                )
                 return False
                 
             # Устанавливаем флаг, что идет обучение
@@ -179,11 +193,21 @@ class VoiceIdentificationModel:
                     if features is not None:
                         features_list.append(features)
                     else:
-                        # В случае ошибки извлечения признаков, пропускаем этот фрагмент
+                        # В случае ошибки извлечения признаков
+                        error_logger.log_error(
+                            "Ошибка извлечения признаков из аудиофрагмента",
+                            "voice_identification",
+                            "train"
+                        )
                         return False
                         
                 # Проверяем, есть ли извлеченные признаки
                 if not features_list:
+                    error_logger.log_error(
+                        "Не удалось извлечь признаки ни из одного аудиофрагмента",
+                        "voice_identification",
+                        "train"
+                    )
                     return False
                     
                 # Преобразуем список в numpy массив
@@ -196,6 +220,11 @@ class VoiceIdentificationModel:
                 self.model = self.build_model(input_shape, len(self.classes))
                 
                 if self.model is None:
+                    error_logger.log_error(
+                        "Не удалось создать модель",
+                        "voice_identification",
+                        "train"
+                    )
                     return False
                     
                 # Обучаем модель с нуля
@@ -241,6 +270,11 @@ class VoiceIdentificationModel:
                         
                 # Проверяем, есть ли извлеченные признаки
                 if not features_list:
+                    error_logger.log_error(
+                        "Не удалось извлечь признаки при дообучении модели",
+                        "voice_identification",
+                        "train"
+                    )
                     return False
                     
                 # Преобразуем список в numpy массив
@@ -276,13 +310,18 @@ class VoiceIdentificationModel:
             return True
             
         except Exception as e:
-            print(f"{sys.exc_info()[2].tb_frame.f_code.co_filename} - {sys.exc_info()[2].tb_lineno} - {str(e)}")
+            error_logger.log_exception(
+                e,
+                "voice_identification",
+                "train",
+                "Ошибка при обучении модели"
+            )
             
             # Сбрасываем флаг обучения в случае ошибки
             self.is_training = False
             return False
             
-    def identify(self, audio_fragments):
+    def predict(self, audio_fragments):
         """
         Идентифицирует пользователя по голосу из аудиофрагментов.
         
@@ -295,10 +334,20 @@ class VoiceIdentificationModel:
         try:
             # Проверка состояния модели
             if not self.is_trained or self.model is None:
+                error_logger.log_error(
+                    "Модель не обучена или не инициализирована",
+                    "voice_identification",
+                    "predict"
+                )
                 return "unknown"
                 
             # Проверка входных данных
             if not audio_fragments or len(audio_fragments) == 0:
+                error_logger.log_error(
+                    "Пустой список аудиофрагментов",
+                    "voice_identification",
+                    "predict"
+                )
                 return "unknown"
                 
             # Извлекаем признаки из всех фрагментов
@@ -310,6 +359,11 @@ class VoiceIdentificationModel:
                     
             # Проверяем, удалось ли извлечь признаки
             if not features_list:
+                error_logger.log_error(
+                    "Не удалось извлечь признаки ни из одного аудиофрагмента",
+                    "voice_identification",
+                    "predict"
+                )
                 return "unknown"
                 
             # Преобразуем список в numpy массив
@@ -327,6 +381,11 @@ class VoiceIdentificationModel:
             
             # Проверяем порог уверенности
             if max_confidence < 0.5:  # Если уверенность ниже порога, считаем пользователя неизвестным
+                error_logger.log_error(
+                    f"Низкая уверенность в предсказании: {max_confidence}",
+                    "voice_identification",
+                    "predict"
+                )
                 return "unknown"
                 
             # Получаем имя пользователя по индексу класса
@@ -335,13 +394,18 @@ class VoiceIdentificationModel:
             return identified_user
             
         except Exception as e:
-            print(f"{sys.exc_info()[2].tb_frame.f_code.co_filename} - {sys.exc_info()[2].tb_lineno} - {str(e)}")
+            error_logger.log_exception(
+                e,
+                "voice_identification",
+                "predict",
+                "Ошибка при идентификации пользователя"
+            )
             
             return "unknown"
             
     def save_model(self, filepath):
         """
-        Сохраняет модель в файл.
+        Сохраняет модель в файл, используя функцию из модуля model_loader_or_saver.
         
         Args:
             filepath: Путь к файлу для сохранения модели
@@ -349,33 +413,11 @@ class VoiceIdentificationModel:
         Returns:
             bool: Успешно ли сохранена модель
         """
-        try:
-            # Проверка состояния модели
-            if not self.is_trained or self.model is None:
-                return False
-                
-            # Создаем директорию для модели, если она не существует
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            
-            # Сохраняем модель
-            self.model.save(filepath)
-            
-            # Сохраняем список классов в отдельный файл
-            classes_file = os.path.join(os.path.dirname(filepath), "classes.txt")
-            with open(classes_file, 'w') as f:
-                for cls in self.classes:
-                    f.write(f"{cls}\n")
-                    
-            return True
-            
-        except Exception as e:
-            print(f"{sys.exc_info()[2].tb_frame.f_code.co_filename} - {sys.exc_info()[2].tb_lineno} - {str(e)}")
-            
-            return False
+        return save_model(self.model, self.is_trained, self.classes, filepath)
             
     def load_model(self, filepath):
         """
-        Загружает модель из файла.
+        Загружает модель из файла, используя функцию из модуля model_loader_or_saver.
         
         Args:
             filepath: Путь к файлу с сохраненной моделью
@@ -383,36 +425,11 @@ class VoiceIdentificationModel:
         Returns:
             bool: Успешно ли загружена модель
         """
-        try:
-            # Проверяем существование файла модели
-            if not os.path.exists(filepath):
-                return False
-                
-            # Проверяем существование файла с классами
-            classes_file = os.path.join(os.path.dirname(filepath), "classes.txt")
-            if not os.path.exists(classes_file):
-                return False
-                
-            # Загружаем модель
-            self.model = tf.keras.models.load_model(filepath)
+        model, classes, is_trained, success = load_model(filepath)
+        
+        if success:
+            self.model = model
+            self.classes = classes
+            self.is_trained = is_trained
             
-            # Загружаем список классов
-            self.classes = []
-            with open(classes_file, 'r') as f:
-                for line in f:
-                    self.classes.append(line.strip())
-                    
-            # Устанавливаем флаг, что модель обучена
-            self.is_trained = True
-            
-            return True
-            
-        except Exception as e:
-            print(f"{sys.exc_info()[2].tb_frame.f_code.co_filename} - {sys.exc_info()[2].tb_lineno} - {str(e)}")
-            
-            # Сбрасываем модель в случае ошибки
-            self.model = None
-            self.classes = []
-            self.is_trained = False
-            
-            return False
+        return success

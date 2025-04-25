@@ -6,6 +6,10 @@
 # Общие константы для всего проекта
 SAMPLE_RATE = 16000  # Частота дискретизации для всех аудиофайлов
 EMOTIONS = ['гнев', 'радость', 'грусть']  # Поддерживаемые эмоции
+# Пути для хранения моделей
+MODELS_DIR = 'models'  # Относительный путь от корня проекта
+VOICE_ID_MODELS_DIR = f'{MODELS_DIR}/voice_identification'  # Путь для моделей идентификации по голосу
+EMOTION_MODELS_DIR = f'{MODELS_DIR}/emotion_recognition'  # Путь для моделей распознавания эмоций
 
 # Константы для обработки аудио
 AUDIO_FRAGMENT_LENGTH = 3  # длина фрагмента в секундах
@@ -32,3 +36,4 @@ DATASET_CREATOR = {
     # Ограничения для обучения
     'N_FFT_DATASET': 2048, # Размер окна для БПФ в dataset_creator
 }
+

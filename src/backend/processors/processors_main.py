@@ -96,32 +96,18 @@ def create_emotion_dataset_from_audio(audio_file, emotion):
         )
         raise
 
-# Функция для тестирования обработки из байтового потока
-def process_audio_bytes_to_voice_id_dataset(audio_bytes, name):
+def get_audio_fragments_from_audio(audio_file):
     """
-    Вспомогательная функция для создания датасета из байтов аудио
-    
-    Args:
-        audio_bytes: Байты аудиофайла
-        name: Строка с именем пользователя
-        
-    Returns:
-        dataset: Датасет для обучения модели идентификации
-    """
-    audio_file = io.BytesIO(audio_bytes)
-    return create_voice_id_dataset_from_audio(audio_file, name)
+    Получает аудиофрагменты из аудиофайла
 
-# Функция для тестирования обработки из байтового потока
-def process_audio_bytes_to_emotion_dataset(audio_bytes, emotion):
-    """
-    Вспомогательная функция для создания датасета из байтов аудио
-    
     Args:
-        audio_bytes: Байты аудиофайла
-        emotion: Строка с названием эмоции
-        
+        audio_file: Файл-подобный объект с аудиозаписью (должен поддерживать метод read())
+
     Returns:
-        dataset: Датасет для обучения модели распознавания эмоций
+        audio_fragments: Список аудиофрагментов
     """
-    audio_file = io.BytesIO(audio_bytes)
-    return create_emotion_dataset_from_audio(audio_file, emotion)
+    # Проверка входных данных
+    if not audio_file:
+        raise ValueError("Не предоставлен аудиофайл")
+    audio_fragments = process_audio(audio_file)
+    return audio_fragments

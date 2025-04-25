@@ -1,10 +1,9 @@
-import os
 import numpy as np
 import tensorflow as tf
 from backend.api.error_logger import error_logger
 from backend.config import EMOTIONS
-import sys
 from backend.processors.dataset_creators.dataset_creator import extract_features
+from backend.ml.shared.model_loader_or_saver import save_model, load_model
 
 class EmotionRecognitionModel:
     """
@@ -128,11 +127,12 @@ class EmotionRecognitionModel:
             return model
             
         except Exception as e:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-            line_no = exc_tb.tb_lineno
-            print(f"{fname} - {line_no} - {str(e)}")
-            
+            error_logger.log_exception(
+                e,
+                "emotion_recognition",
+                "build_model",
+                "Ошибка при построении модели"
+            )
             return None
                 
     def train(self, audio_fragments, labels):
@@ -149,14 +149,29 @@ class EmotionRecognitionModel:
         try:
             # Проверка входных данных
             if not audio_fragments or not labels:
+                error_logger.log_error(
+                    "Пустые входные данные для обучения",
+                    "emotion_recognition",
+                    "train"
+                )
                 return False
                 
             if len(audio_fragments) != len(labels):
+                error_logger.log_error(
+                    "Количество аудиофрагментов не соответствует количеству меток",
+                    "emotion_recognition",
+                    "train"
+                )
                 return False
                 
             # Проверяем, что все метки являются допустимыми эмоциями
             for label in labels:
                 if label not in EMOTIONS:
+                    error_logger.log_error(
+                        f"Недопустимая метка эмоции: {label}",
+                        "emotion_recognition",
+                        "train"
+                    )
                     return False
                     
             # Устанавливаем флаг, что идет обучение
@@ -175,11 +190,21 @@ class EmotionRecognitionModel:
                 if features is not None:
                     features_list.append(features)
                 else:
-                    # В случае ошибки извлечения признаков, пропускаем этот фрагмент
+                    # В случае ошибки извлечения признаков
+                    error_logger.log_error(
+                        "Ошибка извлечения признаков из аудиофрагмента",
+                        "emotion_recognition",
+                        "train"
+                    )
                     return False
                     
             # Проверяем, есть ли извлеченные признаки
             if not features_list:
+                error_logger.log_error(
+                    "Не удалось извлечь признаки ни из одного аудиофрагмента",
+                    "emotion_recognition",
+                    "train"
+                )
                 return False
                 
             # Преобразуем список в numpy массив
@@ -193,6 +218,11 @@ class EmotionRecognitionModel:
                 self.model = self.build_model(input_shape, len(EMOTIONS))
                 
                 if self.model is None:
+                    error_logger.log_error(
+                        "Не удалось создать модель",
+                        "emotion_recognition",
+                        "train"
+                    )
                     return False
                     
             # Обучаем модель
@@ -221,14 +251,15 @@ class EmotionRecognitionModel:
             return True
             
         except Exception as e:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-            line_no = exc_tb.tb_lineno
-            print(f"{fname} - {line_no} - {str(e)}")
-            
+            error_logger.log_exception(
+                e,
+                "emotion_recognition",
+                "train",
+                "Ошибка при обучении модели"
+            )
             return False
             
-    def recognize_emotion(self, audio_fragments):
+    def predict(self, audio_fragments):
         """
         Распознает эмоцию в аудиофрагментах.
         
@@ -241,10 +272,20 @@ class EmotionRecognitionModel:
         try:
             # Проверка состояния модели
             if not self.is_trained or self.model is None:
+                error_logger.log_error(
+                    "Модель не обучена или не инициализирована",
+                    "emotion_recognition",
+                    "predict"
+                )
                 return None
                 
             # Проверка входных данных
             if not audio_fragments or len(audio_fragments) == 0:
+                error_logger.log_error(
+                    "Пустой список аудиофрагментов",
+                    "emotion_recognition",
+                    "predict"
+                )
                 return None
                 
             # Извлекаем признаки из всех фрагментов
@@ -256,6 +297,11 @@ class EmotionRecognitionModel:
                     
             # Проверяем, удалось ли извлечь признаки
             if not features_list:
+                error_logger.log_error(
+                    "Не удалось извлечь признаки ни из одного аудиофрагмента",
+                    "emotion_recognition",
+                    "predict"
+                )
                 return None
                 
             # Преобразуем список в numpy массив
@@ -273,6 +319,11 @@ class EmotionRecognitionModel:
             
             # Проверяем порог уверенности
             if max_confidence < 0.4:  # Используем более низкий порог для эмоций
+                error_logger.log_error(
+                    f"Низкая уверенность в предсказании: {max_confidence}",
+                    "emotion_recognition",
+                    "predict"
+                )
                 return None
                 
             # Получаем название эмоции по индексу класса
@@ -281,16 +332,17 @@ class EmotionRecognitionModel:
             return predicted_emotion
             
         except Exception as e:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-            line_no = exc_tb.tb_lineno
-            print(f"{fname} - {line_no} - {str(e)}")
-            
+            error_logger.log_exception(
+                e,
+                "emotion_recognition",
+                "predict",
+                "Ошибка при распознавании эмоции"
+            )
             return None
             
     def save_model(self, filepath):
         """
-        Сохраняет модель в файл.
+        Сохраняет модель в файл, используя функцию из модуля model_loader_or_saver.
         
         Args:
             filepath: Путь к файлу для сохранения модели
@@ -298,30 +350,11 @@ class EmotionRecognitionModel:
         Returns:
             bool: Успешно ли сохранена модель
         """
-        try:
-            # Проверка состояния модели
-            if not self.is_trained or self.model is None:
-                return False
-                
-            # Создаем директорию для модели, если она не существует
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            
-            # Сохраняем модель
-            self.model.save(filepath)
-            
-            return True
-            
-        except Exception as e:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-            line_no = exc_tb.tb_lineno
-            print(f"{fname} - {line_no} - {str(e)}")
-            
-            return False
+        return save_model(self.model, self.is_trained, filepath)
             
     def load_model(self, filepath):
         """
-        Загружает модель из файла.
+        Загружает модель из файла, используя функцию из модуля model_loader_or_saver.
         
         Args:
             filepath: Путь к файлу с сохраненной моделью
@@ -329,27 +362,10 @@ class EmotionRecognitionModel:
         Returns:
             bool: Успешно ли загружена модель
         """
-        try:
-            # Проверяем существование файла модели
-            if not os.path.exists(filepath):
-                return False
-                
-            # Загружаем модель
-            self.model = tf.keras.models.load_model(filepath)
+        model, is_trained, success = load_model(filepath)
+        
+        if success:
+            self.model = model
+            self.is_trained = is_trained
             
-            # Устанавливаем флаг, что модель обучена
-            self.is_trained = True
-            
-            return True
-            
-        except Exception as e:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-            line_no = exc_tb.tb_lineno
-            print(f"{fname} - {line_no} - {str(e)}")
-            
-            # Сбрасываем модель в случае ошибки
-            self.model = None
-            self.is_trained = False
-            
-            return False
+        return success

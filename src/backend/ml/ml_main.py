@@ -4,11 +4,7 @@ import random
 from backend.ml.voice_identification.model import VoiceIdentificationModel
 from backend.ml.emotion_recognition.model import EmotionRecognitionModel
 from backend.api.error_logger import error_logger
-from backend.config import EMOTIONS, VOICE_ID_MODELS_DIR, EMOTION_MODELS_DIR
-from backend.ml.shared.model_loader_or_saver import save_model as saver_save_model
-from backend.ml.shared.model_loader_or_saver import load_model as saver_load_model
-from backend.ml.shared.model_loader_or_saver import load_models as saver_load_models
-from backend.ml.shared.model_loader_or_saver import save_models as saver_save_models
+from backend.config import EMOTIONS
 
 # Инициализация моделей
 voice_id_model = VoiceIdentificationModel()
@@ -54,8 +50,8 @@ def get_training_status():
         dict: Словарь с информацией о статусе обучения
     """
     return {
-        'voice_id_training': not voice_id_model.is_training,
-        'emotion_training': not emotion_model.is_training
+        'voice_id_training': voice_id_model.is_training,
+        'emotion_training': emotion_model.is_training
     }
 
 def get_training_progress(model_type='all'):
@@ -104,12 +100,12 @@ def train_voice_id_model(dataset):
         training_progress['voice_id']['status'] = 'training'
         training_progress['voice_id']['start_time'] = time.time()
         
-        # Извлекаем аудиофрагменты и метки из датасета
-        audio_fragments = [item['audio'] for item in dataset]
+        # Извлекаем признаки и метки из датасета
+        features = [item['features'] for item in dataset]
         labels = [item['label'] for item in dataset]
         
         # Обучаем модель
-        result = voice_id_model.train(audio_fragments, labels)
+        result = voice_id_model.train(features, labels)
         
         # Обновляем статус обучения
         if result:
@@ -129,6 +125,8 @@ def train_voice_id_model(dataset):
         
         # Обновляем статус обучения при ошибке
         training_progress['voice_id']['status'] = 'error'
+        # Убедимся, что флаг обучения сброшен в случае ошибки
+        voice_id_model.is_training = False
         return False
     
 def train_emotion_model(dataset):
@@ -155,12 +153,12 @@ def train_emotion_model(dataset):
         training_progress['emotion']['status'] = 'training'
         training_progress['emotion']['start_time'] = time.time()
         
-        # Извлекаем аудиофрагменты и метки из датасета
-        audio_fragments = [item['audio'] for item in dataset]
+        # Извлекаем признаки и метки из датасета
+        features = [item['features'] for item in dataset]
         labels = [item['label'] for item in dataset]
         
         # Обучаем модель
-        result = emotion_model.train(audio_fragments, labels)
+        result = emotion_model.train(features, labels)
         
         # Обновляем статус обучения
         if result:
@@ -180,9 +178,11 @@ def train_emotion_model(dataset):
         
         # Обновляем статус обучения при ошибке
         training_progress['emotion']['status'] = 'error'
+        # Убедимся, что флаг обучения сброшен в случае ошибки
+        emotion_model.is_training = False
         return False
 
-def predict_user(audio_fragments):
+def predict_user(features_list_id):
     """
     Идентифицирует пользователя по голосу
     
@@ -203,7 +203,7 @@ def predict_user(audio_fragments):
             return "unknown"
             
         # Идентификация пользователя
-        results = voice_id_model.predict(audio_fragments)
+        results = voice_id_model.predict(features_list_id)
         
         # Для идентификации голоса: голосование по всем фрагментам
         if not results:
@@ -246,7 +246,7 @@ def predict_user(audio_fragments):
         )
         return "unknown"
 
-def predict_emotion(audio_fragments):
+def predict_emotion(features_list_emotion):
     """
     Распознает эмоцию из аудиофрагментов
     
@@ -267,7 +267,7 @@ def predict_emotion(audio_fragments):
             return "unknown"
             
         # Распознавание эмоции
-        results = emotion_model.predict(audio_fragments)
+        results = emotion_model.predict(features_list_emotion)
         
         # Голосование по результатам фрагментов для эмоций
         vote_counts = {}
@@ -290,7 +290,7 @@ def predict_emotion(audio_fragments):
             avg_confidence = confidence_sums[detected_emotion] / vote_counts[detected_emotion]
             
             # Если средняя уверенность низкая, считаем неизвестной
-            if avg_confidence < 0.6:
+            if avg_confidence < 0.8:
                 return "unknown"
                 
             return detected_emotion
@@ -306,7 +306,7 @@ def predict_emotion(audio_fragments):
         )
         return "unknown"
 
-def identify_with_emotion(audio_fragments, expected_emotion):
+def identify_with_emotion(features_list_id, features_list_emotion, expected_emotion):
     """
     Комплексная идентификация пользователя с проверкой эмоции
     
@@ -317,10 +317,6 @@ def identify_with_emotion(audio_fragments, expected_emotion):
     Returns:
         dict: Результаты идентификации и распознавания эмоции
     """
-    # Блокировка доступа к моделям во время идентификации
-    voice_id_model.is_training = True
-    emotion_model.is_training = True
-    
     try:
         # Проверка, что модели обучены
         if not voice_id_model.is_trained:
@@ -341,11 +337,14 @@ def identify_with_emotion(audio_fragments, expected_emotion):
                 'match': False
             }
         
+        # Временно блокируем модели от перезаписи во время процесса идентификации
+        # Не устанавливаем флаг is_training, так как он должен отражать только процесс обучения
+        
         # Идентификация пользователя
-        identity = predict_user(audio_fragments)
+        identity = predict_user(features_list_id)
         
         # Распознавание эмоции
-        detected_emotion = predict_emotion(audio_fragments)
+        detected_emotion = predict_emotion(features_list_emotion)
         
         # Проверка совпадения эмоции с ожидаемой
         emotion_match = detected_emotion.lower() == expected_emotion.lower()
@@ -388,216 +387,3 @@ def identify_with_emotion(audio_fragments, expected_emotion):
             'emotion': None,
             'match': False
         }
-    finally:
-        voice_id_model.is_training = False
-        emotion_model.is_training = False
-
-# Новые функции для каждого типа модели вместо функций с параметром model_type
-
-def reset_voice_id_model():
-    """
-    Сброс модели идентификации голоса до начального состояния
-    
-    Returns:
-        bool: Успешно ли сброшена модель
-    """
-    try:
-        voice_id_model.reset_model()
-        return True
-    except Exception as e:
-        error_logger.log_exception(
-            e,
-            "ml_main",
-            "reset_voice_id_model",
-            "Ошибка при сбросе модели идентификации голоса"
-        )
-        return False
-
-def reset_emotion_model():
-    """
-    Сброс модели распознавания эмоций до начального состояния
-    
-    Returns:
-        bool: Успешно ли сброшена модель
-    """
-    try:
-        emotion_model.reset_model()
-        return True
-    except Exception as e:
-        error_logger.log_exception(
-            e,
-            "ml_main",
-            "reset_emotion_model",
-            "Ошибка при сбросе модели распознавания эмоций"
-        )
-        return False
-
-def load_voice_id_model(filepath):
-    """
-    Загрузка модели идентификации голоса из файла
-    
-    Args:
-        filepath: Путь к файлу модели
-        
-    Returns:
-        bool: Успешно ли загружена модель
-    """
-    try:
-        # Загружаем модель с помощью общей функции
-        model, is_trained, success = saver_load_model(filepath)
-        
-        if not success:
-            return False
-            
-        # Применяем полученные данные к модели
-        voice_id_model.model = model
-        voice_id_model.is_trained = is_trained
-        return True
-    except Exception as e:
-        error_logger.log_exception(
-            e,
-            "ml_main",
-            "load_voice_id_model",
-            "Ошибка при загрузке модели идентификации голоса"
-        )
-        return False
-
-def load_emotion_model(filepath):
-    """
-    Загрузка модели распознавания эмоций из файла
-    
-    Args:
-        filepath: Путь к файлу модели
-        
-    Returns:
-        bool: Успешно ли загружена модель
-    """
-    try:
-        # Загружаем модель с помощью общей функции
-        model, is_trained, success = saver_load_model(filepath)
-        
-        if not success:
-            return False
-            
-        # Применяем полученные данные к модели
-        emotion_model.model = model
-        emotion_model.is_trained = is_trained
-        return True
-    except Exception as e:
-        error_logger.log_exception(
-            e,
-            "ml_main",
-            "load_emotion_model",
-            "Ошибка при загрузке модели распознавания эмоций"
-        )
-        return False
-
-def save_voice_id_model():
-    """
-    Сохранение модели идентификации голоса в файл
-    
-    Returns:
-        str или None: Путь к сохраненной модели или None в случае ошибки
-    """
-    try:
-        # Базовая директория для сохранения
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        
-        if voice_id_model.is_training:
-            error_logger.log_error(
-                "Модель используется. Попробуйте позже",
-                "ml_main",
-                "save_voice_id_model"
-            )
-            return None
-        
-        # Создаем директорию для сохранения
-        save_dir = os.path.join(base_dir, VOICE_ID_MODELS_DIR)
-        os.makedirs(save_dir, exist_ok=True)
-        
-        # Генерируем имя файла с текущим временем
-        timestamp = int(time.time())
-        filepath = os.path.join(save_dir, f"voice_id_model_{timestamp}")
-        
-        # Сохраняем модель с помощью общей функции
-        if saver_save_model(voice_id_model.model, voice_id_model.is_trained, filepath):
-            return filepath
-        return None
-    except Exception as e:
-        error_logger.log_exception(
-            e,
-            "ml_main",
-            "save_voice_id_model",
-            "Ошибка при сохранении модели идентификации голоса"
-        )
-        return None
-
-def save_emotion_model():
-    """
-    Сохранение модели распознавания эмоций в файл
-    
-    Returns:
-        str или None: Путь к сохраненной модели или None в случае ошибки
-    """
-    try:
-        # Базовая директория для сохранения
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        
-        if emotion_model.is_training:
-            error_logger.log_error(
-                "Модель используется. Попробуйте позже",
-                "ml_main",
-                "save_emotion_model"
-            )
-            return None
-        
-        # Создаем директорию для сохранения
-        save_dir = os.path.join(base_dir, EMOTION_MODELS_DIR)
-        os.makedirs(save_dir, exist_ok=True)
-        
-        # Генерируем имя файла с текущим временем
-        timestamp = int(time.time())
-        filepath = os.path.join(save_dir, f"emotion_model_{timestamp}")
-        
-        # Сохраняем модель с помощью общей функции
-        if saver_save_model(emotion_model.model, emotion_model.is_trained, filepath):
-            return filepath
-        return None
-    except Exception as e:
-        error_logger.log_exception(
-            e,
-            "ml_main",
-            "save_emotion_model",
-            "Ошибка при сохранении модели распознавания эмоций"
-        )
-        return None
-
-# Функции-обёртки для взаимодействия с main.py
-
-def load_models(basedir):
-    """
-    Загрузка моделей при старте приложения
-    
-    Args:
-        basedir: Базовая директория проекта
-        
-    Returns:
-        tuple: (voice_id_loaded, emotion_loaded)
-            voice_id_loaded: Была ли загружена модель идентификации
-            emotion_loaded: Была ли загружена модель эмоций
-    """
-    return saver_load_models(voice_id_model, emotion_model, basedir)
-
-def save_models(basedir):
-    """
-    Сохранение моделей при завершении работы приложения
-    
-    Args:
-        basedir: Базовая директория проекта
-        
-    Returns:
-        tuple: (voice_id_path, emotion_path)
-            voice_id_path: Путь к сохраненной модели идентификации или None
-            emotion_path: Путь к сохраненной модели эмоций или None
-    """
-    return saver_save_models(voice_id_model, emotion_model, basedir)

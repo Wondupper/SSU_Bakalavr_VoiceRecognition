@@ -13,10 +13,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let audioFile = null;
     let targetEmotion = null;
     
-    // Запрашиваем эмоцию дня с сервера вместо случайной генерации
+    // Запрашиваем эмоцию дня с сервера
     function fetchDailyEmotion() {
         fetch('/api/daily_emotion')
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Ошибка сервера при получении эмоции дня');
+                }
+                return response.json();
+            })
             .then(data => {
                 targetEmotion = data.emotion;
                 
@@ -25,11 +30,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     targetEmotionElement.textContent = targetEmotion;
                     targetEmotionElement.classList.add('fade-in');
                 } else {
-                    logErrorToSystem('Элемент с id "target-emotion" не найден', "UI", "identification");
+                    console.error('Элемент с id "target-emotion" не найден');
                 }
             })
             .catch(error => {
-                logErrorToSystem('Ошибка получения эмоции дня: ' + error.message, "API", "identification");
+                console.error('Ошибка получения эмоции дня: ' + error.message);
                 // Запасной вариант - используем "радость" по умолчанию
                 targetEmotion = "радость";
                 if (targetEmotionElement) {
@@ -110,11 +115,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             // Обработка результата
-            const userName = data.user;
-            const emotionMatch = data.emotion_match;
+            const userName = data.identity || 'unknown';
+            const emotionMatch = data.match === true;
+            const success = data.success === true;
+            const detectedEmotion = data.emotion || 'unknown';
             
             // Проверка условий успешной идентификации
-            if (userName !== 'unknown' && emotionMatch) {
+            if (success) {
                 // Успешная идентификация
                 showResult(`Идентификация успешна! Ваше имя: <span class="result-username">${userName}</span>`, 'success');
                 document.body.classList.add('success');
@@ -130,11 +137,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     errorMessage += `Эмоция в аудиозаписи не соответствует заданной (${targetEmotion}).`;
                     
                     // Более четкое отображение информации об эмоциях
-                    if (data.error_emotion) {
-                        errorMessage += ` ${data.error_emotion}.`;
-                    } else if (data.detected_emotion) {
-                        errorMessage += ` Обнаруженная эмоция: ${data.detected_emotion}.`;
+                    if (detectedEmotion && detectedEmotion !== 'unknown') {
+                        errorMessage += ` Обнаруженная эмоция: ${detectedEmotion}.`;
                     }
+                }
+                
+                // Если есть сообщение от сервера, добавляем его
+                if (data.message) {
+                    errorMessage = data.message;
                 }
                 
                 showResult(errorMessage, 'error');
@@ -145,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loadingIndicator.style.display = 'none';
             showResult('Ошибка сервера: ' + error.message, 'error');
             document.body.classList.add('error');
-            logErrorToSystem(error.message, "api_request", "identification");
+            console.error(error.message);
         });
     }
     

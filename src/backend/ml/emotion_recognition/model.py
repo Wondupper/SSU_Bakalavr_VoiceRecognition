@@ -2,8 +2,6 @@ import numpy as np
 import tensorflow as tf
 from backend.api.error_logger import error_logger
 from backend.config import EMOTIONS
-from backend.processors.dataset_creators.dataset_creator import extract_features
-from backend.ml.shared.model_loader_or_saver import save_model, load_model
 
 class EmotionRecognitionModel:
     """
@@ -25,16 +23,6 @@ class EmotionRecognitionModel:
         self.is_trained = False
         self.is_training = False
         
-    def reset_model(self):
-        """
-        Сбрасывает модель, удаляя все веса и обученную информацию.
-        """
-        # Удаляем текущую модель из памяти, если она существует
-        if self.model is not None:
-            self.model = None
-            
-        # Сбрасываем флаги состояния
-        self.is_trained = False
         
     def build_model(self, input_shape, num_classes):
         """
@@ -59,7 +47,8 @@ class EmotionRecognitionModel:
                 strides=1,
                 padding='same',
                 activation='relu',
-                dilation_rate=1
+                dilation_rate=1,
+                kernel_regularizer=tf.keras.regularizers.l2(0.001)  # L2 регуляризация
             )(inputs)
             
             # Добавляем слой с большей диалатацией для захвата долгосрочных зависимостей
@@ -69,8 +58,12 @@ class EmotionRecognitionModel:
                 strides=1,
                 padding='same',
                 activation='relu',
-                dilation_rate=2
+                dilation_rate=2,
+                kernel_regularizer=tf.keras.regularizers.l2(0.001)  # L2 регуляризация
             )(x)
+            
+            # Добавляем слой пространственного дропаута для лучшей регуляризации
+            x = tf.keras.layers.SpatialDropout1D(0.2)(x)
             
             # Добавляем еще один слой TDNN с большей диалатацией
             x = tf.keras.layers.Conv1D(
@@ -79,7 +72,8 @@ class EmotionRecognitionModel:
                 strides=1,
                 padding='same',
                 activation='relu',
-                dilation_rate=4
+                dilation_rate=4,
+                kernel_regularizer=tf.keras.regularizers.l2(0.001)  # L2 регуляризация
             )(x)
             
             # Свертка с шагом для уменьшения размерности
@@ -88,7 +82,8 @@ class EmotionRecognitionModel:
                 kernel_size=3,
                 strides=2,
                 padding='same',
-                activation='relu'
+                activation='relu',
+                kernel_regularizer=tf.keras.regularizers.l2(0.001)  # L2 регуляризация
             )(x)
             
             # Добавляем слой нормализации и дропаут для регуляризации
@@ -101,7 +96,8 @@ class EmotionRecognitionModel:
                 kernel_size=3,
                 strides=1,
                 padding='same',
-                activation='relu'
+                activation='relu',
+                kernel_regularizer=tf.keras.regularizers.l2(0.001)  # L2 регуляризация
             )(x)
             
             # Глобальный пулинг для получения фиксированного размера вектора признаков
@@ -117,9 +113,9 @@ class EmotionRecognitionModel:
             # Создаем модель
             model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
             
-            # Компилируем модель
+            # Компилируем модель с оптимизированными параметрами для предотвращения переобучения
             model.compile(
-                optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+                optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005, clipnorm=1.0),  # Уменьшенная скорость обучения
                 loss='sparse_categorical_crossentropy',
                 metrics=['accuracy']
             )
@@ -135,20 +131,20 @@ class EmotionRecognitionModel:
             )
             return None
                 
-    def train(self, audio_fragments, labels):
+    def train(self, features, labels):
         """
-        Обучает модель на наборе аудиофрагментов и соответствующих меток.
+        Обучает модель на наборе признаков и соответствующих меток.
         
         Args:
-            audio_fragments: Список аудиофрагментов для обучения
-            labels: Список меток (эмоций) для каждого фрагмента
+            features: Список признаков (features) для обучения
+            labels: Список меток (эмоций) для каждого набора признаков
             
         Returns:
             bool: Успешно ли завершилось обучение
         """
         try:
             # Проверка входных данных
-            if not audio_fragments or not labels:
+            if not features or not labels:
                 error_logger.log_error(
                     "Пустые входные данные для обучения",
                     "emotion_recognition",
@@ -156,9 +152,9 @@ class EmotionRecognitionModel:
                 )
                 return False
                 
-            if len(audio_fragments) != len(labels):
+            if len(features) != len(labels):
                 error_logger.log_error(
-                    "Количество аудиофрагментов не соответствует количеству меток",
+                    "Количество наборов признаков не соответствует количеству меток",
                     "emotion_recognition",
                     "train"
                 )
@@ -183,32 +179,18 @@ class EmotionRecognitionModel:
             # Преобразуем текстовые метки в числовые индексы
             numeric_labels = np.array([label_to_index[label] for label in labels])
             
-            # Извлекаем признаки из всех аудиофрагментов
-            features_list = []
-            for fragment in audio_fragments:
-                features = extract_features(fragment, for_emotion=True)
-                if features is not None:
-                    features_list.append(features)
-                else:
-                    # В случае ошибки извлечения признаков
-                    error_logger.log_error(
-                        "Ошибка извлечения признаков из аудиофрагмента",
-                        "emotion_recognition",
-                        "train"
-                    )
-                    return False
-                    
-            # Проверяем, есть ли извлеченные признаки
-            if not features_list:
+            # Проверяем, есть ли признаки
+            if not features:
                 error_logger.log_error(
-                    "Не удалось извлечь признаки ни из одного аудиофрагмента",
+                    "Не предоставлены признаки для обучения",
                     "emotion_recognition",
                     "train"
                 )
+                self.is_training = False
                 return False
                 
             # Преобразуем список в numpy массив
-            X = np.array(features_list)
+            X = np.array(features)
             
             # Получаем размерность входных данных для модели
             input_shape = (X.shape[1], X.shape[2])
@@ -223,20 +205,28 @@ class EmotionRecognitionModel:
                         "emotion_recognition",
                         "train"
                     )
+                    self.is_training = False
                     return False
                     
-            # Обучаем модель
+            # Обучаем модель с улучшенными параметрами для предотвращения переобучения
             history = self.model.fit(
                 X, numeric_labels,
-                epochs=50,
-                batch_size=32,
-                validation_split=0.2,
+                epochs=100,  # Увеличиваем число эпох
+                batch_size=min(16, len(X)//2 + 1),  # Меньший размер батча
+                validation_split=0.3,  # Увеличиваем долю валидационной выборки
                 verbose=1,
+                class_weight=self._get_class_weights(numeric_labels),  # Добавляем веса классов
                 callbacks=[
                     tf.keras.callbacks.EarlyStopping(
-                        monitor='val_accuracy',
-                        patience=5,
+                        monitor='val_loss',  # Используем val_loss вместо val_accuracy
+                        patience=20,  # Увеличиваем терпение
                         restore_best_weights=True
+                    ),
+                    tf.keras.callbacks.ReduceLROnPlateau(
+                        monitor='val_loss',
+                        factor=0.5,
+                        patience=10,
+                        min_lr=0.00001
                     )
                 ]
             )
@@ -248,6 +238,9 @@ class EmotionRecognitionModel:
             final_loss = history.history['loss'][-1]
             final_accuracy = history.history['accuracy'][-1]
             
+            # Сбрасываем флаг обучения
+            self.is_training = False
+            
             return True
             
         except Exception as e:
@@ -257,17 +250,19 @@ class EmotionRecognitionModel:
                 "train",
                 "Ошибка при обучении модели"
             )
+            # Сбрасываем флаг обучения в случае ошибки
+            self.is_training = False
             return False
             
-    def predict(self, audio_fragments):
+    def predict(self, features_list):
         """
-        Распознает эмоцию в аудиофрагментах.
+        Распознает эмоцию из признаков.
         
         Args:
-            audio_fragments: Список аудиофрагментов для распознавания
+            features_list: Список признаков для распознавания
             
         Returns:
-            str: Распознанная эмоция или None, если не удалось распознать
+            list: Список результатов распознавания для каждого набора признаков
         """
         try:
             # Проверка состояния модели
@@ -277,59 +272,43 @@ class EmotionRecognitionModel:
                     "emotion_recognition",
                     "predict"
                 )
-                return None
+                return []
                 
             # Проверка входных данных
-            if not audio_fragments or len(audio_fragments) == 0:
+            if not features_list or len(features_list) == 0:
                 error_logger.log_error(
-                    "Пустой список аудиофрагментов",
+                    "Пустой список признаков",
                     "emotion_recognition",
                     "predict"
                 )
-                return None
-                
-            # Извлекаем признаки из всех фрагментов
-            features_list = []
-            for fragment in audio_fragments:
-                features = extract_features(fragment, for_emotion=True)
-                if features is not None:
-                    features_list.append(features)
-                    
-            # Проверяем, удалось ли извлечь признаки
-            if not features_list:
-                error_logger.log_error(
-                    "Не удалось извлечь признаки ни из одного аудиофрагмента",
-                    "emotion_recognition",
-                    "predict"
-                )
-                return None
+                return []
                 
             # Преобразуем список в numpy массив
             X = np.array(features_list)
             
-            # Получаем предсказания модели для всех фрагментов
+            # Получаем предсказания модели для всех наборов признаков
             predictions = self.model.predict(X)
             
-            # Усредняем предсказания по всем фрагментам
-            avg_prediction = np.mean(predictions, axis=0)
-            
-            # Находим класс с наибольшей вероятностью
-            predicted_class_index = np.argmax(avg_prediction)
-            max_confidence = avg_prediction[predicted_class_index]
-            
-            # Проверяем порог уверенности
-            if max_confidence < 0.4:  # Используем более низкий порог для эмоций
-                error_logger.log_error(
-                    f"Низкая уверенность в предсказании: {max_confidence}",
-                    "emotion_recognition",
-                    "predict"
-                )
-                return None
+            # Формируем результаты для каждого набора признаков
+            results = []
+            for i, prediction in enumerate(predictions):
+                # Находим класс с наибольшей вероятностью
+                predicted_class_index = np.argmax(prediction)
+                confidence = prediction[predicted_class_index]
                 
-            # Получаем название эмоции по индексу класса
-            predicted_emotion = EMOTIONS[predicted_class_index]
+                # Если уверенность выше порога, распознаем эмоцию
+                if confidence >= 0.8:
+                    label = EMOTIONS[predicted_class_index]
+                else:
+                    label = "unknown"
+                
+                # Добавляем результат в список
+                results.append({
+                    'label': label,
+                    'confidence': float(confidence)
+                })
             
-            return predicted_emotion
+            return results
             
         except Exception as e:
             error_logger.log_exception(
@@ -338,34 +317,36 @@ class EmotionRecognitionModel:
                 "predict",
                 "Ошибка при распознавании эмоции"
             )
+            return []
+            
+    def _get_class_weights(self, labels):
+        """
+        Вычисляет веса классов для несбалансированных данных
+        
+        Args:
+            labels: Числовые метки классов
+            
+        Returns:
+            dict: Словарь весов классов
+        """
+        try:
+            from sklearn.utils.class_weight import compute_class_weight
+            import numpy as np
+            
+            classes = np.unique(labels)
+            if len(classes) > 1:
+                weights = compute_class_weight(class_weight='balanced', 
+                                              classes=classes, 
+                                              y=labels)
+                return {i: w for i, w in zip(classes, weights)}
+            else:
+                return None
+        except Exception as e:
+            error_logger.log_exception(
+                e,
+                "emotion_recognition",
+                "_get_class_weights",
+                "Ошибка при вычислении весов классов"
+            )
             return None
             
-    def save_model(self, filepath):
-        """
-        Сохраняет модель в файл, используя функцию из модуля model_loader_or_saver.
-        
-        Args:
-            filepath: Путь к файлу для сохранения модели
-            
-        Returns:
-            bool: Успешно ли сохранена модель
-        """
-        return save_model(self.model, self.is_trained, filepath)
-            
-    def load_model(self, filepath):
-        """
-        Загружает модель из файла, используя функцию из модуля model_loader_or_saver.
-        
-        Args:
-            filepath: Путь к файлу с сохраненной моделью
-            
-        Returns:
-            bool: Успешно ли загружена модель
-        """
-        model, is_trained, success = load_model(filepath)
-        
-        if success:
-            self.model = model
-            self.is_trained = is_trained
-            
-        return success

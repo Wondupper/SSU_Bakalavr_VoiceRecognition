@@ -1,13 +1,10 @@
 from backend.processors.augmentation_processors.augmentation_processor import augment_audio
 from backend.api.error_logger import error_logger
 from .other.feature_extractors import extract_voice_id_features, extract_emotion_features
-from .other.validation import validate_audio_fragments, validate_emotion, validate_dataset_result
-from backend.config import DATASET_CREATOR
+from .other.validator import validate_audio_fragments, validate_emotion, validate_dataset_result
 
-# Используем константы из конфигурационного файла
-EMOTIONS = DATASET_CREATOR['EMOTIONS']
 
-def create_voice_id_dataset(audio_fragments, name):
+def create_voice_id_training_dataset(audio_fragments, name):
     """
     Создание датасета для модели идентификации по голосу
 
@@ -61,7 +58,7 @@ def create_voice_id_dataset(audio_fragments, name):
     
     return dataset
 
-def create_emotion_dataset(audio_fragments, emotion):
+def create_emotion_training_dataset(audio_fragments, emotion):
     """
     Создание датасета для модели распознавания эмоций
     
@@ -95,16 +92,12 @@ def create_emotion_dataset(audio_fragments, emotion):
     # Создание датасета для обучения нейронной сети
     dataset = []
     
-    # Эмоции кодируем как индексы
-    emotion_map = {'гнев': 0, 'радость': 1, 'грусть': 2}
-    emotion_idx = emotion_map[emotion]
-    
     # Последовательное извлечение признаков из каждого фрагмента
     for fragment in augmented_fragments:
         try:
             features = extract_emotion_features(fragment)
             if features is not None:
-                dataset.append({'features': features, 'label': emotion_idx})
+                dataset.append({'features': features, 'label': emotion})
         except Exception as e:
             error_info = error_logger.log_exception(
                 e,
@@ -119,3 +112,93 @@ def create_emotion_dataset(audio_fragments, emotion):
     validate_dataset_result(dataset, "emotion")
     
     return dataset
+
+def create_voice_id_prediction_features(audio_fragments):
+    """
+    Создание набора признаков из аудиофрагментов для предсказания идентификации по голосу
+    
+    Args:
+        audio_fragments: Список аудиофрагментов для анализа
+    
+    Returns:
+        features_list: Список numpy массивов формы (MAX_FRAMES, n_features) с признаками для модели
+    """
+    # Валидация входных данных
+    validate_audio_fragments(audio_fragments, "voice_id_prediction")
+    
+    # Создание списка признаков для предсказания
+    features_list = []
+    
+    # Последовательное извлечение признаков из каждого фрагмента без аугментации
+    for fragment in audio_fragments:
+        try:
+            features = extract_voice_id_features(fragment)
+            if features is not None:
+                features_list.append(features)
+        except Exception as e:
+            error_info = error_logger.log_exception(
+                e,
+                "dataset_creator",
+                "create_voice_id_prediction_features",
+                "Ошибка при извлечении признаков из фрагмента для предсказания"
+            )
+            # Пропускаем фрагмент в случае ошибки
+            continue
+    
+    # Проверка наличия данных в списке признаков
+    if not features_list:
+        error_msg = "Не удалось создать признаки для предсказания: все операции извлечения признаков завершились с ошибками"
+        error_info = error_logger.log_exception(
+            ValueError(error_msg),
+            "dataset_creator.py",
+            "create_voice_id_prediction_features",
+            "Проверка результатов обработки данных"
+        )
+        raise ValueError(error_msg)
+    
+    return features_list
+
+def create_emotion_prediction_features(audio_fragments):
+    """
+    Создание набора признаков из аудиофрагментов для предсказания эмоции
+    
+    Args:
+        audio_fragments: Список аудиофрагментов для анализа
+    
+    Returns:
+        features_list: Список numpy массивов формы (MAX_FRAMES, n_features) с признаками для модели
+    """
+    # Валидация входных данных
+    validate_audio_fragments(audio_fragments, "emotion_prediction")
+    
+    # Создание списка признаков для предсказания
+    features_list = []
+    
+    # Последовательное извлечение признаков из каждого фрагмента без аугментации
+    for fragment in audio_fragments:
+        try:
+            features = extract_emotion_features(fragment)
+            if features is not None:
+                features_list.append(features)
+        except Exception as e:
+            error_info = error_logger.log_exception(
+                e,
+                "dataset_creator",
+                "create_emotion_prediction_features",
+                "Ошибка при извлечении признаков из фрагмента для предсказания эмоции"
+            )
+            # Пропускаем фрагмент в случае ошибки
+            continue
+    
+    # Проверка наличия данных в списке признаков
+    if not features_list:
+        error_msg = "Не удалось создать признаки для предсказания эмоции: все операции извлечения признаков завершились с ошибками"
+        error_info = error_logger.log_exception(
+            ValueError(error_msg),
+            "dataset_creator.py",
+            "create_emotion_prediction_features",
+            "Проверка результатов обработки данных"
+        )
+        raise ValueError(error_msg)
+    
+    return features_list

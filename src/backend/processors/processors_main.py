@@ -1,9 +1,10 @@
-import io
 from backend.api.error_logger import error_logger
 from backend.processors.audio_processors.audio_processor import process_audio
-from backend.processors.dataset_creators.dataset_creator import create_voice_id_dataset, create_emotion_dataset
+from backend.processors.dataset_creators.dataset_creator import (create_voice_id_training_dataset, create_emotion_training_dataset,
+                                                                 create_voice_id_prediction_features, create_emotion_prediction_features)
 
-def create_voice_id_dataset_from_audio(audio_file, name):
+
+def create_voice_id_training_dataset_from_audio(audio_file, name):
     """
     Создает датасет для модели идентификации по голосу из аудиофайла
 
@@ -36,7 +37,7 @@ def create_voice_id_dataset_from_audio(audio_file, name):
         
         # Шаг 2: Создание датасета из аудиофрагментов
         # Аугментация происходит внутри create_voice_id_dataset
-        dataset = create_voice_id_dataset(audio_fragments, name)
+        dataset = create_voice_id_training_dataset(audio_fragments, name)
         
         return dataset
         
@@ -49,7 +50,7 @@ def create_voice_id_dataset_from_audio(audio_file, name):
         )
         raise
 
-def create_emotion_dataset_from_audio(audio_file, emotion):
+def create_emotion_training_dataset_from_audio(audio_file, emotion):
     """
     Создает датасет для модели распознавания эмоций из аудиофайла
 
@@ -82,8 +83,8 @@ def create_emotion_dataset_from_audio(audio_file, emotion):
             raise ValueError("Не удалось получить аудиофрагменты из файла")
         
         # Шаг 2: Создание датасета из аудиофрагментов
-        # Аугментация происходит внутри create_emotion_dataset
-        dataset = create_emotion_dataset(audio_fragments, emotion)
+        # Аугментация происходит внутри create_emotion_training_dataset
+        dataset = create_emotion_training_dataset(audio_fragments, emotion)
         
         return dataset
         
@@ -96,7 +97,7 @@ def create_emotion_dataset_from_audio(audio_file, emotion):
         )
         raise
 
-def get_audio_fragments_from_audio(audio_file):
+def get_audio_features_from_audio_for_id_user_prediction(audio_file):
     """
     Получает аудиофрагменты из аудиофайла
 
@@ -104,10 +105,28 @@ def get_audio_fragments_from_audio(audio_file):
         audio_file: Файл-подобный объект с аудиозаписью (должен поддерживать метод read())
 
     Returns:
-        audio_fragments: Список аудиофрагментов
+        audio_fragments: Список аудиопризнаков
     """
     # Проверка входных данных
     if not audio_file:
         raise ValueError("Не предоставлен аудиофайл")
     audio_fragments = process_audio(audio_file)
-    return audio_fragments
+    features_list = create_voice_id_prediction_features(audio_fragments)
+    return features_list
+
+def get_audio_features_from_audio_for_emotion_prediction(audio_file):
+    """
+    Получает аудиофрагменты из аудиофайла
+
+    Args:
+        audio_file: Файл-подобный объект с аудиозаписью (должен поддерживать метод read())
+
+    Returns:
+        audio_fragments: Список аудиопризнаков
+    """
+    # Проверка входных данных
+    if not audio_file:
+        raise ValueError("Не предоставлен аудиофайл")
+    audio_fragments = process_audio(audio_file)
+    features_list = create_emotion_prediction_features(audio_fragments)
+    return features_list

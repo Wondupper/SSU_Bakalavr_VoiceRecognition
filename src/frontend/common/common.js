@@ -4,9 +4,7 @@ let isModelTraining = false;
 // Переменная для отслеживания статуса интервалов
 let intervals = {
     statusCheck: null,
-    errorCheck: null,
-    progressCheck: null,
-    trainingErrorsCheck: null
+    progressCheck: null
 };
 
 // Добавим переменную для хранения типа текущего обучения
@@ -158,8 +156,6 @@ function initIntervals() {
     
     // Запускаем проверку статуса моделей
     intervals.statusCheck = setInterval(checkModelStatus, 5000);
-    
-    // Примечание: проверка ошибок отключена, т.к. эндпоинты /errors удалены
 }
 
 // Функция для очистки всех интервалов
@@ -170,22 +166,10 @@ function clearAllIntervals() {
         intervals.statusCheck = null;
     }
     
-    // Очищаем интервал проверки ошибок
-    if (intervals.errorCheck) {
-        clearInterval(intervals.errorCheck);
-        intervals.errorCheck = null;
-    }
-    
     // Очищаем интервал проверки прогресса
     if (intervals.progressCheck) {
         clearInterval(intervals.progressCheck);
         intervals.progressCheck = null;
-    }
-    
-    // Очищаем интервал проверки ошибок обучения
-    if (intervals.trainingErrorsCheck) {
-        clearInterval(intervals.trainingErrorsCheck);
-        intervals.trainingErrorsCheck = null;
     }
 }
 
@@ -249,17 +233,8 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('beforeunload', clearAllIntervals);
 });
 
-// Функция для проверки системных ошибок
-function checkSystemErrors(displayElement = null) {
-    // Функция отключена, т.к. эндпоинт /api/errors удален
-    if (displayElement) {
-        displayElement.style.display = 'none';
-    }
-}
-
 // Определяем глобальную функцию логирования ошибок
 window.logErrorToSystem = function(error, module = "frontend", location = window.location.pathname) {
-    // Функция отключена, т.к. эндпоинт /api/errors/log удален
     // Логируем ошибку в консоль для отладки
     console.error(`[${module}] [${location}] Ошибка: ${error.toString()}`);
 };
@@ -410,7 +385,7 @@ function startProgressCheck() {
 function checkTrainingProgress() {
     if (!currentTrainingType) {
         // Определяем тип обучения на основе URL
-        if (window.location.pathname.includes('training')) {
+        if (window.location.pathname.includes('idtraining')) {
             currentTrainingType = 'voice_id';
         } else if (window.location.pathname.includes('emtraining')) {
             currentTrainingType = 'emotion';
@@ -476,42 +451,5 @@ function updateProgressBar(data) {
             Ошибка: ${progress.loss.toFixed(4)}<br>
             Прошло времени: ${minutes}м ${seconds}с
         `;
-    }
-}
-
-// Добавляем функцию для остановки мониторинга ошибок обучения
-function stopTrainingErrorsCheck() {
-    // Функция оставлена для совместимости
-    if (intervals.trainingErrorsCheck) {
-        clearInterval(intervals.trainingErrorsCheck);
-        intervals.trainingErrorsCheck = null;
-    }
-}
-
-// Функция для проверки ошибок обучения определенного типа
-function checkTrainingErrors(modelType, displayElement) {
-    if (!displayElement) {
-        console.error("Элемент отображения статуса не найден");
-        return;
-    }
-    
-    // Функция отключена, т.к. эндпоинт /api/errors удален
-    displayElement.style.display = 'none';
-}
-
-// Функция для начала мониторинга ошибок обучения
-function startTrainingErrorsCheck(modelType, displayElement) {
-    // Функция отключена, т.к. эндпоинт /api/errors удален
-    console.log(`Мониторинг ошибок для ${modelType} отключен`);
-    
-    // Очищаем предыдущий интервал, если он был
-    if (intervals.trainingErrorsCheck) {
-        clearInterval(intervals.trainingErrorsCheck);
-        intervals.trainingErrorsCheck = null;
-    }
-    
-    // Скрываем элемент отображения
-    if (displayElement) {
-        displayElement.style.display = 'none';
     }
 }

@@ -46,6 +46,5 @@ logs/
 .DS_Store
 Thumbs.db 
 
-test_input_audiofiles/
-.cursor/
 testing
+.cursor/

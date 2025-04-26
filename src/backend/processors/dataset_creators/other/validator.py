@@ -1,8 +1,6 @@
 from backend.api.error_logger import error_logger
-from backend.config import DATASET_CREATOR
+from backend.config import EMOTIONS
 
-# Используем константы из конфигурационного файла
-EMOTIONS = DATASET_CREATOR['EMOTIONS']
 
 def validate_audio_fragments(audio_fragments, context="common"):
     """

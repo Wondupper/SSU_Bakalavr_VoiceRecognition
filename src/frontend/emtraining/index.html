@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Обучение модели распознавания эмоций</title>
-    <!-- Google Fonts - добавить современные шрифты -->
+    <title>Обучение распознавания эмоций</title>
+    
+    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -22,64 +23,58 @@
 </head>
 <body>
     <div class="container">
-        <h1>Обучение модели распознавания эмоций</h1>
-        
-        <a href="/" class="back-button">← На главную</a>
+        <header class="page-header">
+            <h1 class="page-title">Обучение распознавания эмоций</h1>
+            <a href="/" class="back-button">← На главную</a>
+        </header>
         
         <div class="form-container">
-            <div class="form-group">
-                <label for="emotion">Выберите эмоцию:</label>
-                <select id="emotion" required>
-                    <option value="" disabled selected>Выберите эмоцию</option>
-                    <option value="гнев">Гнев</option>
-                    <option value="радость">Радость</option>
-                    <option value="грусть">Грусть</option>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label for="audio-file">Аудиозапись для обучения модели:</label>
-                <div class="file-upload">
-                    <input type="file" id="audio-file" accept="audio/*" class="file-input">
-                    <label for="audio-file" class="file-label">
-                        <span class="file-icon">📁</span>
-                        <span class="file-text">Выберите файл</span>
-                    </label>
-                </div>
-                <div id="file-name" class="file-name"></div>
-            </div>
-            
-            <div class="audio-preview-container" id="audio-preview-container" style="display: none;">
-                <h3>Предпрослушивание:</h3>
-                <audio id="audio-preview" controls></audio>
-                <button id="reset-button" class="reset-button">Отменить выбор</button>
-            </div>
-            
-            <button id="submit-button" class="button button-primary" disabled>Отправить на обучение</button>
-        </div>
-        
-        <div class="panel-section">
-            <h2>Управление моделью распознавания эмоций</h2>
-            
-            <div class="action-buttons">
-                <button id="reset-emotion-model" class="action-button danger">Сбросить модель</button>
-                <button id="save-emotion-model" class="action-button primary">Сохранить модель</button>
-                <div class="file-upload-wrapper">
-                    <button class="action-button secondary">Загрузить модель</button>
-                    <input type="file" id="load-emotion-model" class="file-input" accept=".zip,.h5,.pkl">
+            <div class="form-section">
+                <h2 class="section-title">Добавьте образец речи с эмоцией</h2>
+                <p class="section-description">Загрузите аудиофайл с вашим голосом и выберите какая эмоция в нем звучит. Это поможет системе лучше распознавать эмоции.</p>
+                
+                <form id="emotion-training-form">
+                    <div class="form-group">
+                        <label for="emotion-select">Выберите эмоцию:</label>
+                        <select id="emotion-select" required>
+                            <option value="" disabled selected>Выберите эмоцию</option>
+                            <option value="радость">Радость</option>
+                            <option value="грусть">Грусть</option>
+                            <option value="гнев">Гнев</option>
+                        </select>
+                    </div>
+                    
+                    <div class="file-upload">
+                        <label for="audio-file" class="file-label">
+                            <span class="file-icon">🎤</span>
+                            <span class="file-text">Выберите аудиофайл</span>
+                        </label>
+                        <input type="file" id="audio-file" accept="audio/*" required>
+                        <p id="file-name" class="file-name"></p>
+                    </div>
+                    
+                    <div id="audio-preview-container" class="audio-preview" style="display: none;">
+                        <p>Предпрослушивание:</p>
+                        <audio id="audio-preview" controls></audio>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button id="reset-button" class="reset-button">Отменить выбор</button>
+                        <button type="submit" id="submit-button" class="submit-button" disabled>Начать обучение</button>
+                    </div>
+                </form>
+                
+                <div id="status-container" class="status-container">
+                    <p id="status-message" class="status-message"></p>
                 </div>
             </div>
-            
-            <div id="emotion-model-status" class="status-message"></div>
         </div>
         
-        <div id="status-message" class="status-message"></div>
         <div id="loading-indicator" class="loading-indicator" style="display: none;">
             <div class="spinner"></div>
-            <p>Обработка данных...</p>
         </div>
     </div>
-    
+
     <script src="/common/common.js"></script>
     <script src="/emtraining/main.js"></script>
 </body>

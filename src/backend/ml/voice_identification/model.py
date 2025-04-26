@@ -1,9 +1,6 @@
 import numpy as np
 import tensorflow as tf
 from backend.api.error_logger import error_logger
-from backend.processors.dataset_creators.dataset_creator import extract_features
-from backend.ml.shared.model_loader_or_saver import save_model, load_model
-
 
 class VoiceIdentificationModel:
     """
@@ -112,22 +109,46 @@ class VoiceIdentificationModel:
             # Глобальный пулинг для получения фиксированного размера вектора признаков
             x = tf.keras.layers.GlobalAveragePooling1D()(x)
             
-            # Полносвязный слой для классификации
+            # Улучшенный блок представления с использованием остаточных связей
+            x_res = x
+            x = tf.keras.layers.Dense(256, activation='relu')(x)
+            x = tf.keras.layers.Dropout(0.3)(x)
             x = tf.keras.layers.Dense(128, activation='relu')(x)
-            x = tf.keras.layers.Dropout(0.5)(x)
+            x = tf.keras.layers.Dropout(0.4)(x)
+            
+            # Добавляем остаточную связь для лучшего градиентного потока
+            if x_res.shape[-1] == 128:
+                x = x + x_res
+            else:
+                x_res = tf.keras.layers.Dense(128, activation=None)(x_res)
+                x = x + x_res
+                
+            # Нормализация перед выходным слоем
+            x = tf.keras.layers.BatchNormalization()(x)
             
             # Выходной слой с softmax-активацией для многоклассовой классификации
-            outputs = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
+            # Важно: проверяем, что num_classes > 1 для избежания ошибки softmax
+            if num_classes > 1:
+                outputs = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
+            else:
+                outputs = tf.keras.layers.Dense(1, activation='sigmoid')(x)
             
             # Создаем модель
             model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
             
-            # Компилируем модель
-            model.compile(
-                optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
-                loss='sparse_categorical_crossentropy',
-                metrics=['accuracy']
-            )
+            # Компилируем модель с более подходящими параметрами для маленьких выборок
+            if num_classes > 1:
+                model.compile(
+                    optimizer=tf.keras.optimizers.Adam(learning_rate=0.001, clipnorm=1.0),
+                    loss='sparse_categorical_crossentropy',
+                    metrics=['accuracy']
+                )
+            else:
+                model.compile(
+                    optimizer=tf.keras.optimizers.Adam(learning_rate=0.001, clipnorm=1.0),
+                    loss='binary_crossentropy',
+                    metrics=['accuracy']
+                )
             
             return model
             
@@ -140,20 +161,20 @@ class VoiceIdentificationModel:
             )
             return None
                 
-    def train(self, audio_fragments, labels):
+    def train(self, features, labels):
         """
-        Обучает модель на наборе аудиофрагментов и соответствующих меток.
+        Обучает модель на наборе признаков и соответствующих меток.
         
         Args:
-            audio_fragments: Список аудиофрагментов для обучения
-            labels: Список меток (имена пользователей) для каждого фрагмента
+            features: Список признаков (features) для обучения
+            labels: Список меток (имена пользователей) для каждого набора признаков
             
         Returns:
             bool: Успешно ли завершилось обучение
         """
         try:
             # Проверка входных данных
-            if not audio_fragments or not labels:
+            if not features or not labels:
                 error_logger.log_error(
                     "Пустые входные данные для обучения",
                     "voice_identification",
@@ -161,9 +182,9 @@ class VoiceIdentificationModel:
                 )
                 return False
                 
-            if len(audio_fragments) != len(labels):
+            if len(features) != len(labels):
                 error_logger.log_error(
-                    "Количество аудиофрагментов не соответствует количеству меток",
+                    "Количество наборов признаков не соответствует количеству меток",
                     "voice_identification",
                     "train"
                 )
@@ -186,32 +207,18 @@ class VoiceIdentificationModel:
                 # Преобразуем текстовые метки в числовые индексы
                 numeric_labels = np.array([label_to_index[label] for label in labels])
                 
-                # Извлекаем признаки из всех аудиофрагментов
-                features_list = []
-                for fragment in audio_fragments:
-                    features = extract_features(fragment)
-                    if features is not None:
-                        features_list.append(features)
-                    else:
-                        # В случае ошибки извлечения признаков
-                        error_logger.log_error(
-                            "Ошибка извлечения признаков из аудиофрагмента",
-                            "voice_identification",
-                            "train"
-                        )
-                        return False
-                        
-                # Проверяем, есть ли извлеченные признаки
-                if not features_list:
+                # Проверяем, есть ли признаки
+                if not features:
                     error_logger.log_error(
-                        "Не удалось извлечь признаки ни из одного аудиофрагмента",
+                        "Не предоставлены признаки для обучения",
                         "voice_identification",
                         "train"
                     )
+                    self.is_training = False
                     return False
                     
                 # Преобразуем список в numpy массив
-                X = np.array(features_list)
+                X = np.array(features)
                 
                 # Получаем размерность входных данных для модели
                 input_shape = (X.shape[1], X.shape[2])
@@ -225,20 +232,32 @@ class VoiceIdentificationModel:
                         "voice_identification",
                         "train"
                     )
+                    self.is_training = False
                     return False
-                    
-                # Обучаем модель с нуля
+                
+                # Улучшения для малых выборок: аугментация на лету
+                data_augmentation = tf.keras.Sequential([
+                    tf.keras.layers.GaussianNoise(0.1),
+                ])
+                
+                # Обучаем модель с нуля с улучшенными параметрами
                 history = self.model.fit(
-                    X, numeric_labels,
-                    epochs=50,
-                    batch_size=32,
+                    data_augmentation(X, training=True), numeric_labels,
+                    epochs=100,  # Увеличиваем число эпох
+                    batch_size=min(32, len(X)//2 + 1),  # Адаптируем размер батча
                     validation_split=0.2,
                     verbose=1,
                     callbacks=[
                         tf.keras.callbacks.EarlyStopping(
                             monitor='val_accuracy',
-                            patience=5,
+                            patience=15,  # Увеличиваем терпение для маленьких выборок
                             restore_best_weights=True
+                        ),
+                        tf.keras.callbacks.ReduceLROnPlateau(
+                            monitor='val_loss',
+                            factor=0.5,
+                            patience=5,
+                            min_lr=0.00001
                         )
                     ]
                 )
@@ -249,6 +268,9 @@ class VoiceIdentificationModel:
                 # Логируем результаты обучения
                 final_loss = history.history['loss'][-1]
                 final_accuracy = history.history['accuracy'][-1]
+                
+                # Сбрасываем флаг обучения
+                self.is_training = False
                 
                 return True
             
@@ -261,37 +283,42 @@ class VoiceIdentificationModel:
                 # Преобразуем текстовые метки в числовые индексы
                 numeric_labels = np.array([label_to_index[label] for label in labels])
                 
-                # Извлекаем признаки из всех аудиофрагментов
-                features_list = []
-                for fragment in audio_fragments:
-                    features = extract_features(fragment)
-                    if features is not None:
-                        features_list.append(features)
-                        
-                # Проверяем, есть ли извлеченные признаки
-                if not features_list:
+                # Проверяем, есть ли признаки
+                if not features:
                     error_logger.log_error(
-                        "Не удалось извлечь признаки при дообучении модели",
+                        "Не предоставлены признаки для дообучения",
                         "voice_identification",
                         "train"
                     )
+                    self.is_training = False
                     return False
                     
                 # Преобразуем список в numpy массив
-                X = np.array(features_list)
+                X = np.array(features)
                 
-                # Дообучаем существующую модель
+                # Аугментация данных для дообучения
+                data_augmentation = tf.keras.Sequential([
+                    tf.keras.layers.GaussianNoise(0.1),
+                ])
+                
+                # Дообучаем существующую модель с улучшенными параметрами
                 history = self.model.fit(
-                    X, numeric_labels,
-                    epochs=20,  # Меньше эпох для дообучения
-                    batch_size=32,
+                    data_augmentation(X, training=True), numeric_labels,
+                    epochs=50,  # Умеренное количество эпох для дообучения
+                    batch_size=min(32, len(X)//2 + 1),  # Адаптивный размер батча
                     validation_split=0.2,
                     verbose=1,
                     callbacks=[
                         tf.keras.callbacks.EarlyStopping(
                             monitor='val_accuracy',
-                            patience=3,
+                            patience=10,  # Увеличенное терпение
                             restore_best_weights=True
+                        ),
+                        tf.keras.callbacks.ReduceLROnPlateau(
+                            monitor='val_loss',
+                            factor=0.5,
+                            patience=3,
+                            min_lr=0.00001
                         )
                     ]
                 )
@@ -303,11 +330,10 @@ class VoiceIdentificationModel:
                 final_loss = history.history['loss'][-1]
                 final_accuracy = history.history['accuracy'][-1]
                 
+                # Сбрасываем флаг обучения
+                self.is_training = False
+                
                 return True
-            
-            # Сбрасываем флаг обучения
-            self.is_training = False
-            return True
             
         except Exception as e:
             error_logger.log_exception(
@@ -321,15 +347,15 @@ class VoiceIdentificationModel:
             self.is_training = False
             return False
             
-    def predict(self, audio_fragments):
+    def predict(self, features_list):
         """
-        Идентифицирует пользователя по голосу из аудиофрагментов.
+        Идентифицирует пользователя по голосу из признаков.
         
         Args:
-            audio_fragments: Список аудиофрагментов для идентификации
+            features_list: Список признаков для идентификации
             
         Returns:
-            str: Имя пользователя или "unknown", если не удалось идентифицировать
+            list: Список результатов распознавания для каждого набора признаков
         """
         try:
             # Проверка состояния модели
@@ -339,59 +365,43 @@ class VoiceIdentificationModel:
                     "voice_identification",
                     "predict"
                 )
-                return "unknown"
+                return []
                 
             # Проверка входных данных
-            if not audio_fragments or len(audio_fragments) == 0:
+            if not features_list or len(features_list) == 0:
                 error_logger.log_error(
-                    "Пустой список аудиофрагментов",
+                    "Пустой список признаков",
                     "voice_identification",
                     "predict"
                 )
-                return "unknown"
-                
-            # Извлекаем признаки из всех фрагментов
-            features_list = []
-            for fragment in audio_fragments:
-                features = extract_features(fragment)
-                if features is not None:
-                    features_list.append(features)
-                    
-            # Проверяем, удалось ли извлечь признаки
-            if not features_list:
-                error_logger.log_error(
-                    "Не удалось извлечь признаки ни из одного аудиофрагмента",
-                    "voice_identification",
-                    "predict"
-                )
-                return "unknown"
+                return []
                 
             # Преобразуем список в numpy массив
             X = np.array(features_list)
             
-            # Получаем предсказания модели для всех фрагментов
+            # Получаем предсказания модели для всех наборов признаков
             predictions = self.model.predict(X)
             
-            # Усредняем предсказания по всем фрагментам
-            avg_prediction = np.mean(predictions, axis=0)
-            
-            # Находим класс с наибольшей вероятностью
-            predicted_class_index = np.argmax(avg_prediction)
-            max_confidence = avg_prediction[predicted_class_index]
-            
-            # Проверяем порог уверенности
-            if max_confidence < 0.5:  # Если уверенность ниже порога, считаем пользователя неизвестным
-                error_logger.log_error(
-                    f"Низкая уверенность в предсказании: {max_confidence}",
-                    "voice_identification",
-                    "predict"
-                )
-                return "unknown"
+            # Формируем результаты для каждого набора признаков
+            results = []
+            for i, prediction in enumerate(predictions):
+                # Находим класс с наибольшей вероятностью
+                predicted_class_index = np.argmax(prediction)
+                confidence = prediction[predicted_class_index]
                 
-            # Получаем имя пользователя по индексу класса
-            identified_user = self.classes[predicted_class_index]
+                # Если уверенность выше порога, идентифицируем пользователя
+                if confidence >= 0.8:
+                    label = self.classes[predicted_class_index]
+                else:
+                    label = "Unknown"
+                
+                # Добавляем результат в список
+                results.append({
+                    'label': label,
+                    'confidence': float(confidence)
+                })
             
-            return identified_user
+            return results
             
         except Exception as e:
             error_logger.log_exception(
@@ -401,35 +411,4 @@ class VoiceIdentificationModel:
                 "Ошибка при идентификации пользователя"
             )
             
-            return "unknown"
-            
-    def save_model(self, filepath):
-        """
-        Сохраняет модель в файл, используя функцию из модуля model_loader_or_saver.
-        
-        Args:
-            filepath: Путь к файлу для сохранения модели
-            
-        Returns:
-            bool: Успешно ли сохранена модель
-        """
-        return save_model(self.model, self.is_trained, self.classes, filepath)
-            
-    def load_model(self, filepath):
-        """
-        Загружает модель из файла, используя функцию из модуля model_loader_or_saver.
-        
-        Args:
-            filepath: Путь к файлу с сохраненной моделью
-            
-        Returns:
-            bool: Успешно ли загружена модель
-        """
-        model, classes, is_trained, success = load_model(filepath)
-        
-        if success:
-            self.model = model
-            self.classes = classes
-            self.is_trained = is_trained
-            
-        return success
+            return []

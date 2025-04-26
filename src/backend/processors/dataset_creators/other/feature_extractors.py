@@ -1,11 +1,10 @@
 import numpy as np
 import librosa
-import sys
-import os
 from backend.config import (
     DATASET_CREATOR, SAMPLE_RATE,
     HOP_LENGTH
 )
+from backend.api.error_logger import error_logger
 
 # Используем константы из конфигурационного файла
 N_MFCC = DATASET_CREATOR['N_MFCC']
@@ -158,10 +157,12 @@ def extract_voice_id_features(audio_data):
         return _standardize_features(features)
         
     except Exception as e:
-        exc_type, exc_obj, exc_tb = sys.exc_info()
-        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-        line_no = exc_tb.tb_lineno
-        print(f"{fname} - {line_no} - {str(e)}")
+        error_logger.log_exception(
+            e,
+            "feature_extractors.py",
+            "extract_voice_id_features",
+            "Ошибка при извлечении признаков для идентификации голоса"
+        )
         return None
 
 def extract_emotion_features(audio_data):
@@ -288,8 +289,10 @@ def extract_emotion_features(audio_data):
         return _standardize_features(features)
         
     except Exception as e:
-        exc_type, exc_obj, exc_tb = sys.exc_info()
-        fname = os.path.basename(exc_tb.tb_frame.f_code.co_filename)
-        line_no = exc_tb.tb_lineno
-        print(f"{fname} - {line_no} - {str(e)}")
+        error_logger.log_exception(
+            e,
+            "feature_extractors.py",
+            "extract_emotion_features",
+            "Ошибка при извлечении признаков для распознавания эмоций"
+        )
         return None 

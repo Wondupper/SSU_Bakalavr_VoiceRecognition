@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const usernameInput = document.getElementById('username');
+    // Получаем элементы формы
+    const nameInput = document.getElementById('name-input');
     const audioFileInput = document.getElementById('audio-file');
     const fileNameDisplay = document.getElementById('file-name');
     const audioPreviewContainer = document.getElementById('audio-preview-container');
@@ -9,16 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusMessage = document.getElementById('status-message');
     const loadingIndicator = document.getElementById('loading-indicator');
     
-    // Элементы управления моделью
-    const resetVoiceModelBtn = document.getElementById('reset-voice-model');
-    const saveVoiceModelBtn = document.getElementById('save-voice-model');
-    const loadVoiceModelInput = document.getElementById('load-voice-model');
-    const voiceModelStatus = document.getElementById('voice-model-status');
-    
     let audioFile = null;
-    
-    // Обработчик изменения имени пользователя
-    usernameInput.addEventListener('input', validateForm);
     
     // Обработчик выбора файла
     audioFileInput.addEventListener('change', (e) => {
@@ -36,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    // Обработчик сброса файла
+    // Обработчик сброса выбора файла
     resetButton.addEventListener('click', () => {
         audioFileInput.value = '';
         audioFile = null;
@@ -46,44 +38,42 @@ document.addEventListener('DOMContentLoaded', () => {
         validateForm();
     });
     
-    // Обработчик отправки формы
-    submitButton.addEventListener('click', submitForm);
+    // Обработчик изменения имени
+    nameInput.addEventListener('input', validateForm);
     
-    // Обработчики для управления моделью
-    resetVoiceModelBtn.addEventListener('click', () => resetModel('voice_id'));
-    saveVoiceModelBtn.addEventListener('click', () => saveModel('voice_id'));
-    loadVoiceModelInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-            loadModel('voice_id', e.target.files[0]);
-        }
+    // Обработчик отправки формы
+    document.getElementById('voice-training-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        submitForm();
     });
     
-    // Функция проверки валидности формы
+    // Функция валидации формы
     function validateForm() {
-        const username = usernameInput.value.trim();
-        const hasFile = audioFileInput.files.length > 0;
+        const isNameValid = nameInput.value.trim().length >= 2;
+        const isFileValid = audioFile !== null;
         
-        submitButton.disabled = !(username && hasFile);
+        submitButton.disabled = !(isNameValid && isFileValid);
     }
     
     // Функция отправки формы
     function submitForm() {
-        const username = usernameInput.value.trim();
+        if (!audioFile || !nameInput.value.trim()) {
+            return;
+        }
         
-        if (!username || !audioFile) {
-            showStatus('Заполните все поля', 'error');
+        // Добавляем проверку размера файла
+        if (audioFile.size > 20 * 1024 * 1024) { // 20MB максимум
+            showStatus('Ошибка: Размер файла превышает 20МБ', 'error');
             return;
         }
         
         // Показываем индикатор загрузки
-        loadingIndicator.style.display = 'flex';
-        statusMessage.textContent = '';
-        statusMessage.className = 'status-message';
+        loadingIndicator.style.display = 'block';
         
         // Создаем объект FormData для отправки данных
         const formData = new FormData();
-        formData.append('name', username);
         formData.append('audio', audioFile);
+        formData.append('name', nameInput.value.trim());
         
         // Отправляем запрос на сервер
         fetch('/api/id_training', {
@@ -94,81 +84,61 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(data => {
             if (data.error) {
                 loadingIndicator.style.display = 'none';
-                showStatus(data.error, 'error');
-            } else {
-                showStatus(data.message, 'success');
+                showStatus('Ошибка: ' + data.error, 'error');
+                return;
+            }
+            
+            // Проверяем статус обучения (поддерживаем как новый, так и старый формат API)
+            if (data.status === 'started' || data.message) {
+                showStatus('Обучение модели началось. Это может занять некоторое время...', 'info');
                 
                 // Начинаем мониторинг прогресса обучения
                 startTrainingProgressMonitor();
-                
-                // Сбрасываем форму после успешной отправки
-                usernameInput.value = '';
-                resetButton.click();
+            } else {
+                loadingIndicator.style.display = 'none';
+                showStatus('Произошла ошибка при обучении модели', 'error');
             }
         })
         .catch(error => {
             loadingIndicator.style.display = 'none';
             showStatus('Ошибка сервера: ' + error.message, 'error');
-            logErrorToSystem(error.message, "api_request", "training");
+            logErrorToSystem(error.message, "voice_id_training", window.location.pathname);
         });
     }
     
     // Функция для мониторинга прогресса обучения
     function startTrainingProgressMonitor() {
-        // Устанавливаем индикатор загрузки
-        const loadingText = document.createElement('p');
-        loadingText.textContent = 'Идет обучение модели...';
-        loadingIndicator.appendChild(loadingText);
-        
-        // Индикатор прогресса
-        const progressContainer = document.createElement('div');
-        progressContainer.style.width = '100%';
-        progressContainer.style.height = '20px';
-        progressContainer.style.backgroundColor = '#f3f3f3';
-        progressContainer.style.borderRadius = '10px';
-        progressContainer.style.marginTop = '20px';
-        progressContainer.style.marginBottom = '10px';
-        progressContainer.style.overflow = 'hidden';
-        
-        const progressBar = document.createElement('div');
-        progressBar.style.width = '0%';
-        progressBar.style.height = '100%';
-        progressBar.style.backgroundColor = '#4CAF50';
-        progressBar.style.transition = 'width 0.5s';
-        progressContainer.appendChild(progressBar);
-        loadingIndicator.appendChild(progressContainer);
-        
-        // Статус обучения
         const statusContainer = document.createElement('div');
-        statusContainer.style.color = 'white';
-        statusContainer.style.marginTop = '10px';
-        statusContainer.textContent = 'Подготовка данных...';
+        statusContainer.className = 'training-stats';
+        statusContainer.innerHTML = 'Обучение модели началось...';
+        
+        // Добавляем элементы в индикатор загрузки
+        loadingIndicator.innerHTML = '<div class="spinner"></div>';
         loadingIndicator.appendChild(statusContainer);
+        
+        let isTrainingCompleted = false;
         
         // Запускаем интервал для проверки прогресса
         const progressInterval = setInterval(() => {
+            // Если обучение уже завершено, прекращаем опрос
+            if (isTrainingCompleted) {
+                clearInterval(progressInterval);
+                return;
+            }
+            
             fetch('/api/training_progress?model_type=voice_id')
-                .then(response => response.json())
+                .then(response => {
+                    // Проверяем успешность ответа
+                    if (!response.ok) {
+                        throw new Error(`HTTP error: ${response.status}`);
+                    }
+                    return response.json();
+                })
                 .then(data => {
-                    // Обновляем прогресс-бар
-                    if (data.status === 'training') {
-                        const percent = Math.round((data.current_epoch / data.total_epochs) * 100);
-                        progressBar.style.width = `${percent}%`;
-                        
-                        // Вычисляем прошедшее время
-                        const elapsedTime = Math.round((Date.now() - data.start_time * 1000) / 1000);
-                        const minutes = Math.floor(elapsedTime / 60);
-                        const seconds = elapsedTime % 60;
-                        
-                        // Обновляем статус
-                        statusContainer.innerHTML = `
-                            Эпоха: ${data.current_epoch} / ${data.total_epochs}<br>
-                            Точность: ${(data.accuracy * 100).toFixed(2)}%<br>
-                            Ошибка: ${data.loss.toFixed(4)}<br>
-                            Прошло времени: ${minutes}м ${seconds}с
-                        `;
-                    } else if (data.status === 'completed') {
+                    // Проверяем статус обучения
+                    if (data.status === 'completed') {
                         // Обучение завершено
+                        isTrainingCompleted = true;
                         clearInterval(progressInterval);
                         loadingIndicator.style.display = 'none';
                         showStatus('Обучение модели успешно завершено!', 'success');
@@ -179,6 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }, 1000);
                     } else if (data.status === 'error') {
                         // Ошибка обучения
+                        isTrainingCompleted = true;
                         clearInterval(progressInterval);
                         loadingIndicator.style.display = 'none';
                         showStatus('Ошибка при обучении модели. Пожалуйста, попробуйте еще раз.', 'error');
@@ -190,156 +161,44 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 })
                 .catch(error => {
-                    console.error('Ошибка при проверке прогресса:', error);
+                    // Если обучение завершено, сервер может перестать отвечать на запросы
+                    // прогресса, что вызовет ошибку - это не всегда плохо
+                    if (isTrainingCompleted) {
+                        return;
+                    }
+                    
+                    // Проверяем, нет ли признаков успешного завершения обучения
+                    // в сообщении об ошибке
+                    const errorMessage = error.toString().toLowerCase();
+                    if (errorMessage.includes('not found') || 
+                        errorMessage.includes('no training in progress')) {
+                        // Вероятно, обучение завершилось успешно
+                        isTrainingCompleted = true;
+                        clearInterval(progressInterval);
+                        loadingIndicator.style.display = 'none';
+                        showStatus('Обучение модели успешно завершено!', 'success');
+                        
+                        // Очищаем индикатор для будущих запусков
+                        setTimeout(() => {
+                            loadingIndicator.innerHTML = '<div class="spinner"></div>';
+                        }, 1000);
+                    } else {
+                        console.error('Ошибка при проверке прогресса:', error);
+                    }
                 });
         }, 1000);
     }
     
     // Функция отображения статуса
     function showStatus(message, type) {
+        // Очищаем все существующие классы статуса
+        statusMessage.classList.remove('success', 'error', 'info');
+        
+        // Устанавливаем текст и добавляем нужный класс
         statusMessage.textContent = message;
-        statusMessage.className = 'status-message ' + type;
-    }
-    
-    // Функции управления моделями из панели администрирования
-    function resetModel(modelType) {
-        if (!confirm(`Вы уверены, что хотите сбросить модель идентификации по голосу?`)) {
-            return;
-        }
+        statusMessage.classList.add(type);
         
-        loadingIndicator.style.display = 'block';
-        statusMessage.textContent = '';
-        statusMessage.className = 'status-message';
-        
-        fetch('/api/model/reset', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ model_type: modelType })
-        })
-        .then(response => response.json())
-        .then(data => {
-            loadingIndicator.style.display = 'none';
-            
-            if (data.error) {
-                showModelStatus(data.error, 'error');
-            } else {
-                showModelStatus(data.message, 'success');
-            }
-        })
-        .catch(error => {
-            loadingIndicator.style.display = 'none';
-            showModelStatus('Ошибка сервера: ' + error.message, 'error');
-            logErrorToSystem(error.message, "model_reset", window.location.pathname);
-        });
-    }
-    
-    function saveModel(modelType) {
-        loadingIndicator.style.display = 'block';
-        statusMessage.textContent = '';
-        statusMessage.className = 'status-message';
-        
-        fetch('/api/model/download', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ model_type: modelType })
-        })
-        .then(response => {
-            loadingIndicator.style.display = 'none';
-            
-            if (response.ok) {
-                // Если успешно, начинаем скачивание файла
-                showModelStatus('Модель успешно сохранена и скачивается...', 'success');
-                return response.blob();
-            } else {
-                // Обрабатываем ошибку
-                return response.json().then(data => {
-                    throw new Error(data.error || 'Ошибка при скачивании модели');
-                });
-            }
-        })
-        .then(blob => {
-            // Создаем ссылку для скачивания
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = url;
-            a.download = modelType === 'voice_id' ? 'voice_id_model.zip' : 'emotion_model.zip';
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-        })
-        .catch(error => {
-            loadingIndicator.style.display = 'none';
-            showModelStatus('Ошибка сервера: ' + error.message, 'error');
-            logErrorToSystem(error.message, "model_download", window.location.pathname);
-        });
-    }
-    
-    function loadModel(modelType, file) {
-        // Создаем объект FormData для отправки файла
-        const formData = new FormData();
-        formData.append('model_file', file);
-        formData.append('model_type', modelType);
-        
-        loadingIndicator.style.display = 'block';
-        statusMessage.textContent = '';
-        statusMessage.className = 'status-message';
-        
-        // Загружаем файл на сервер в соответствующую директорию
-        fetch('/api/model/upload', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                loadingIndicator.style.display = 'none';
-                showModelStatus(data.error, 'error');
-                return;
-            }
-            
-            // Если загрузка файла прошла успешно, вызываем API для загрузки модели из файла
-            const filePath = data.file_path;
-            
-            fetch('/api/model/load', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model_type: modelType,
-                    file_path: filePath
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                loadingIndicator.style.display = 'none';
-                
-                if (data.error) {
-                    showModelStatus(data.error, 'error');
-                } else {
-                    showModelStatus(data.message, 'success');
-                }
-            })
-            .catch(error => {
-                loadingIndicator.style.display = 'none';
-                showModelStatus('Ошибка сервера: ' + error.message, 'error');
-                logErrorToSystem(error.message, "model_load", window.location.pathname);
-            });
-        })
-        .catch(error => {
-            loadingIndicator.style.display = 'none';
-            showModelStatus('Ошибка загрузки файла: ' + error.message, 'error');
-            logErrorToSystem(error.message, "model_upload", window.location.pathname);
-        });
-    }
-    
-    function showModelStatus(message, type) {
-        voiceModelStatus.textContent = message;
-        voiceModelStatus.className = 'status-message ' + type;
+        // Убеждаемся, что сообщение видимо
+        statusMessage.style.display = 'block';
     }
 });

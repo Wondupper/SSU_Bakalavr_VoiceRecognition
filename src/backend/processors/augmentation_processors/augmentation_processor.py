@@ -1,5 +1,4 @@
 import librosa
-import random
 from backend.api.error_logger import error_logger
 
 # Импортируем функции из созданных модулей
@@ -79,7 +78,13 @@ def augment_audio(audio_fragments):
     
     # Собираем все фрагменты
     result_fragments = []
+    # Добавляем оригинальные фрагменты
+    result_fragments.extend(original_fragments)
+    # Добавляем фрагменты с удаленным шумом
+    result_fragments.extend(denoised_fragments)
+    # Добавляем замедленные фрагменты
     result_fragments.extend(slowdown_fragments)
+    # Добавляем ускоренные фрагменты
     result_fragments.extend(speedup_fragments)
         
     return result_fragments

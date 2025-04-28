@@ -1,16 +1,16 @@
 from flask import Blueprint, request, jsonify
-from backend.processors.processors_main import (create_voice_id_training_dataset_from_audio, create_emotion_training_dataset_from_audio, 
-                                                get_audio_features_from_audio_for_id_user_prediction, get_audio_features_from_audio_for_emotion_prediction
-                                                )
-from backend.ml.ml_main import (
-    get_daily_emotion, 
-    get_training_status, 
-    get_training_progress, 
-    train_voice_id_model, 
-    train_emotion_model, 
-    identify_with_emotion
-)
+import random
+from backend.ml.voice_identification_model import VoiceIdentificationModel
+from backend.ml.emotions_recognitions_model import EmotionRecognitionModel
 from backend.api.error_logger import error_logger
+from backend.config import EMOTIONS
+
+# Инициализация моделей
+voice_id_model = VoiceIdentificationModel()
+emotion_model = EmotionRecognitionModel()
+
+# Эмоция дня, которая генерируется один раз при запуске сервера
+DAILY_EMOTION = random.choice(EMOTIONS)
 
 def handle_error(error, module="api", location="general", status_code=400):
     """
@@ -35,8 +35,8 @@ def handle_error(error, module="api", location="general", status_code=400):
 
 api_bp = Blueprint('api', __name__)
 
-# Выводим эмоцию дня из ml_main для информации
-print(f"Эмоция дня установлена: {get_daily_emotion()}")
+# Выводим эмоцию дня для информации
+print(f"Эмоция дня установлена: {DAILY_EMOTION}")
 
 @api_bp.route('/id_training', methods=['POST'])
 def id_training():
@@ -73,11 +73,9 @@ def id_training():
         )
         return jsonify({'error': 'Файл не выбран'}), 400
     
-    # Обработка и подготовка данных
-    dataset = create_voice_id_training_dataset_from_audio(audio_file, name)
+    # Передаем аудиофайл напрямую в модель
+    result = voice_id_model.train([audio_file], [name])
     
-    # Запускаем обучение через ml_main
-    result = train_voice_id_model(dataset)
     if result:
         return jsonify({'message': 'Обучение модели завершено успешно'}), 200
     else:
@@ -117,12 +115,10 @@ def em_training():
             "Проверка наличия файла"
         )
         return jsonify({'error': 'Файл не выбран'}), 400
-
-    # Обработка и подготовка данных
-    dataset = create_emotion_training_dataset_from_audio(audio_file, emotion)
+        
+    # Передаем аудиофайл напрямую в модель
+    result = emotion_model.train([audio_file], [emotion])
     
-    # Запускаем обучение через ml_main
-    result = train_emotion_model(dataset)
     if result:
         return jsonify({'message': 'Обучение модели завершено успешно'}), 200
     else:
@@ -156,15 +152,59 @@ def identify():
                 'emotion': None,
                 'match': False
             })
+            
+        # Проверка, что модели обучены
+        if not voice_id_model.is_trained:
+            return jsonify({
+                'success': False,
+                'message': 'Модель идентификации не обучена',
+                'identity': None,
+                'emotion': None,
+                'match': False
+            })
+            
+        if not emotion_model.is_trained:
+            return jsonify({
+                'success': False,
+                'message': 'Модель эмоций не обучена',
+                'identity': None,
+                'emotion': None,
+                'match': False
+            })
         
-        # Получение признаков для идентификации пользователя и эмоции
-        features_list_for_identification = get_audio_features_from_audio_for_id_user_prediction(audio_file)
-        features_list_for_emotion = get_audio_features_from_audio_for_emotion_prediction(audio_file)
+        # Напрямую идентифицируем пользователя по голосу
+        identity = voice_id_model.predict(audio_file)
         
-        # Используем функцию identify_with_emotion из ml_main
-        result = identify_with_emotion(features_list_for_identification, features_list_for_emotion, expected_emotion)
+        # Получаем результат сравнения эмоций
+        emotion_match = emotion_model.compare_emotion(audio_file, expected_emotion)
         
-        return jsonify(result)
+        # Получаем распознанную эмоцию
+        detected_emotion = emotion_model.predict(audio_file)
+        
+        # Рассчитываем успешность идентификации
+        success = True
+        message = "Идентификация выполнена успешно"
+        
+        if identity == "unknown" and detected_emotion == "unknown":
+            success = False
+            message = "Не удалось распознать пользователя и эмоцию"
+        elif identity == "unknown":
+            success = False
+            message = "Не удалось распознать пользователя"
+        elif detected_emotion == "unknown":
+            success = False
+            message = "Не удалось распознать эмоцию"
+        elif not emotion_match:
+            success = False
+            message = f"Эмоция не соответствует ожидаемой ({detected_emotion} вместо {expected_emotion})"
+        
+        return jsonify({
+            'success': success,
+            'message': message,
+            'identity': identity,
+            'emotion': detected_emotion,
+            'match': emotion_match
+        })
         
     except Exception as e:
         error_logger.log_exception(
@@ -187,7 +227,10 @@ def get_status():
     Эндпоинт для получения статуса моделей
     """
     try:
-        return jsonify(get_training_status()), 200
+        return jsonify({
+            'voice_id_training': voice_id_model.is_training,
+            'emotion_training': emotion_model.is_training
+        }), 200
     except Exception as e:
         error_logger.log_exception(
             e,
@@ -202,21 +245,5 @@ def get_daily_emotion_endpoint():
     """
     Возвращает эмоцию дня, которая остается постоянной до перезапуска сервера
     """
-    return jsonify({'emotion': get_daily_emotion()}), 200
-
-@api_bp.route('/training_progress', methods=['GET'])
-def get_training_progress_endpoint():
-    """
-    Эндпоинт для получения прогресса обучения моделей
-    """
-    model_type = request.args.get('model_type', 'all')
-    
-    if model_type not in ['all', 'voice_id', 'emotion']:
-        return jsonify({'error': 'Неверный тип модели'}), 400
-        
-    progress = get_training_progress(model_type)
-    if progress is not None:
-        return jsonify(progress), 200
-    else:
-        return jsonify({'error': 'Ошибка получения прогресса'}), 500
+    return jsonify({'emotion': DAILY_EMOTION}), 200
 

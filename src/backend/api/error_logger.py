@@ -19,7 +19,7 @@ class ErrorLogger:
         # Формируем сообщение
         log_message = error_message
         if module or context:
-            log_message = f"{module or 'unknown'} - {context or 'unknown'} - {error_message}"
+            log_message = f"[ERROR] - {module or 'unknown'} - {context or 'unknown'} - {error_message}"
         
         # Вывод в консоль
         print(log_message, file=sys.stderr)

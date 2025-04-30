@@ -419,9 +419,6 @@ class EmotionRecognitionModel:
             # Устанавливаем флаг, что идет обучение
             self.is_training = True
             
-            # Создаем отображение эмоций на индексы
-            emotion_to_index: Dict[str, int] = {emotion: i for i, emotion in enumerate(EMOTIONS)}
-            
             # Извлекаем признаки из аудиофайлов
             info_logger.info("Start extracting features from audio files")
             all_features: List[torch.Tensor] = []
@@ -437,7 +434,7 @@ class EmotionRecognitionModel:
             
             for features in features_list:
                 all_features.append(features)
-                all_labels.append(emotion_to_index[emotion])
+                all_labels.append(emotion)
             info_logger.info("End extracting features from audio files")
             
             if not all_features:

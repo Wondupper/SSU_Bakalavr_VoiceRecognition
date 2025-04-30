@@ -5,7 +5,7 @@ import torch.optim as optim
 import torchaudio
 import random
 import io
-from typing import List, Dict, Tuple, Union, Optional, Any
+from typing import List, Dict, Tuple, Union, Optional, Any, Set
 from werkzeug.datastructures import FileStorage
 from backend.api.error_logger import error_logger
 from backend.api.info_logger import info_logger
@@ -122,7 +122,7 @@ class VoiceIdentificationModel:
         info_logger.info("---Start initializing VoiceIdentification model---")
         # Инициализируем атрибуты
         self.model: Optional[VoiceIdentificationNN] = None
-        self.classes: List[str] = []
+        self.classes: Set[str] = {}
         self.is_trained: bool = False
         self.is_training: bool = False
         self.device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -420,12 +420,6 @@ class VoiceIdentificationModel:
             # Устанавливаем флаг, что идет обучение
             self.is_training = True
             
-            # Обновляем список классов
-            unique_names: List[str] = sorted(list(set(name)))
-            
-            # Создаем отображение имен на индексы
-            name_to_index: Dict[str, int] = {name: i for i, name in enumerate(unique_names)}
-            
             # Извлекаем признаки из аудиофайлов
             info_logger.info("Start extracting features from audio files")
             all_features: List[torch.Tensor] = []
@@ -441,7 +435,7 @@ class VoiceIdentificationModel:
             
             for feature in features:
                 all_features.append(feature)
-                all_labels.append(name_to_index[name])
+                all_labels.append(name)
             info_logger.info("End extracting features from audio files")
             
             if not all_features:
@@ -460,10 +454,10 @@ class VoiceIdentificationModel:
             info_logger.info("End converting features to PyTorch tensors")
             
             # Проверка, создана ли модель и соответствует ли она текущим классам
-            if self.model is None or len(self.classes) != len(unique_names) or not all(x in self.classes for x in unique_names):
+            if self.model is None or not name in self.classes:
                 info_logger.info("Creating new VoiceIdentification model")
                 # Обновляем список классов
-                self.classes = unique_names
+                self.classes.add(name)
                 
                 # Создаем новую модель
                 input_dim: int = X.size(2)

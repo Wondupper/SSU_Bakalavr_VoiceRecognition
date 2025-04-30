@@ -77,7 +77,7 @@ def id_training() -> Tuple[Response, int]:
         return jsonify({'error': 'Файл не выбран'}), 400
     
     # Передаем аудиофайл напрямую в модель
-    result: bool = voice_id_model.train([audio_file], [name])
+    result: bool = voice_id_model.train(audio_file, name)
     
     if result:
         return jsonify({'message': 'Обучение модели завершено успешно'}), 200
@@ -120,7 +120,7 @@ def em_training() -> Tuple[Response, int]:
         return jsonify({'error': 'Файл не выбран'}), 400
         
     # Передаем аудиофайл напрямую в модель
-    result: bool = emotion_model.train([audio_file], [emotion])
+    result: bool = emotion_model.train(audio_file, emotion)
     
     if result:
         return jsonify({'message': 'Обучение модели завершено успешно'}), 200

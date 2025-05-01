@@ -1,21 +1,13 @@
-import os
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import torchaudio
-import io
-import random
-from typing import List, Dict, Tuple, Union, Optional, Any, cast
 from werkzeug.datastructures import FileStorage
-from backend.api.error_logger import error_logger
-from backend.api.info_logger import info_logger
-from backend.config import EMOTIONS, SAMPLE_RATE, AUGMENTATION, MODELS_PARAMS
+from backend.config import EMOTIONS
 from backend.ml.audio_model_base import AudioModelBase
 
 class EmotionRecognitionNN(nn.Module):
     """
     Нейронная сеть для распознавания эмоций в речи на основе PyTorch.
-    Использует свёрточную архитектуру с дилатацией (аналог TDNN).
+    Архитектура упрощена для предотвращения переобучения на малых наборах данных.
     """
     def __init__(self, input_dim: int, num_classes: int) -> None:
         """
@@ -25,59 +17,48 @@ class EmotionRecognitionNN(nn.Module):
             input_dim: Размерность входных данных (features)
             num_classes: Количество классов (эмоций)
         """
-        info_logger.info("---Start building EmotionRecognition model---")
 
         super(EmotionRecognitionNN, self).__init__()
         
-        # Первый сверточный блок
+        # Уменьшаем количество фильтров и добавляем больше Dropout
+        # Первый сверточный блок с сильной регуляризацией
         self.conv1 = nn.Sequential(
-            nn.Conv1d(input_dim, 64, kernel_size=3, stride=1, padding=1, dilation=1),
-            nn.ReLU(),
-            nn.BatchNorm1d(64)
+            nn.Conv1d(input_dim, 32, kernel_size=5, stride=1, padding=2),
+            nn.LeakyReLU(0.1),
+            nn.BatchNorm1d(32),
+            nn.Dropout(0.3)  # Увеличенный дропаут
         )
         
-        # Второй сверточный блок с большей дилатацией
+        # Второй сверточный блок с Max Pooling для уменьшения размерности
         self.conv2 = nn.Sequential(
-            nn.Conv1d(64, 64, kernel_size=3, stride=1, padding=2, dilation=2),
-            nn.ReLU(),
+            nn.Conv1d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(0.1),
             nn.BatchNorm1d(64),
-            nn.Dropout(0.2)
+            nn.MaxPool1d(2),
+            nn.Dropout(0.4)  # Увеличенный дропаут
         )
         
-        # Третий сверточный блок с ещё большей дилатацией
+        # Третий сверточный блок - меньше фильтров, чем было раньше
         self.conv3 = nn.Sequential(
-            nn.Conv1d(64, 128, kernel_size=3, stride=1, padding=4, dilation=4),
-            nn.ReLU(),
-            nn.BatchNorm1d(128)
-        )
-        
-        # Четвертый сверточный блок с шагом для уменьшения размерности
-        self.conv4 = nn.Sequential(
-            nn.Conv1d(128, 128, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.BatchNorm1d(128),
-            nn.Dropout(0.3)
-        )
-        
-        # Пятый сверточный блок для извлечения высокоуровневых признаков
-        self.conv5 = nn.Sequential(
-            nn.Conv1d(128, 256, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.BatchNorm1d(256)
+            nn.Conv1d(64, 64, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(0.1),
+            nn.BatchNorm1d(64),
+            nn.MaxPool1d(2),
+            nn.Dropout(0.4)  # Увеличенный дропаут
         )
         
         # Глобальный пулинг
         self.global_pool = nn.AdaptiveAvgPool1d(1)
         
-        # Полносвязный слой для классификации
+        # Полносвязный слой для классификации - упрощен
         self.fc = nn.Sequential(
-            nn.Linear(256, 128),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(128, num_classes)
+            nn.Linear(64, 32),
+            nn.LeakyReLU(0.1),
+            nn.Dropout(0.5),  # Высокий уровень дропаута для предотвращения переобучения
+            nn.Linear(32, num_classes)
         )
+    
 
-        info_logger.info("---Finish building EmotionRecognition model---")
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -89,14 +70,16 @@ class EmotionRecognitionNN(nn.Module):
         Returns:
             Предсказания модели
         """
-        info_logger.info("---Start forwarding EmotionRecognition model---")
+
+        # Если данные приходят в формате [batch_size, time, features], 
+        # преобразуем их в формат [batch_size, features, time]
+        if x.shape[1] > x.shape[2]:
+            x = x.transpose(1, 2)
 
         # Сверточные блоки
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
-        x = self.conv4(x)
-        x = self.conv5(x)
         
         # Глобальный пулинг
         x = self.global_pool(x)
@@ -104,8 +87,6 @@ class EmotionRecognitionNN(nn.Module):
         
         # Полносвязный слой
         x = self.fc(x)
-        
-        info_logger.info("---Finish forwarding EmotionRecognition model---")
 
         return x
 
@@ -132,111 +113,16 @@ class EmotionRecognitionModel(AudioModelBase[EmotionRecognitionNN]):
             self.index_to_class[idx] = emotion
             
         self.index_to_emotion = self.index_to_class  # Для совместимости
-            
-    def _create_or_update_model(self, features: torch.Tensor) -> None:
-        """
-        Создает или обновляет модель для распознавания эмоций.
-        
-        Args:
-            features: Тензор признаков для определения входной размерности
-        """
-        # Проверка, создана ли модель
-        if self.model is None:
-            info_logger.info("Creating new EmotionRecognition model")
-            # Создаем новую модель
-            input_dim: int = features.size(2)
-            self.model = EmotionRecognitionNN(input_dim, len(self.classes)).to(self.device)
-            info_logger.info("New EmotionRecognition model created")
     
-    def predict(self, audio_file: FileStorage, expected_emotion: Optional[str] = None) -> Union[Dict[str, Union[str, float]], bool]:
+    def predict(self, audio_file: FileStorage) -> str:
         """
         Распознает эмоцию из аудиофайла.
         
         Args:
             audio_file: Аудиофайл для распознавания
-            expected_emotion: Ожидаемая эмоция для сравнения (опционально)
             
         Returns:
-            dict: Результат распознавания с эмоцией и уверенностью
-            или bool, если указана ожидаемая эмоция
+            str: Предсказанная эмоция
         """
-        info_logger.info("---Start prediction process in EmotionRecognition model---")
-        try:
-            # Используем базовый метод для извлечения признаков
-            base_result = self._predict_base(audio_file)
-            if base_result["status"] == "error":
-                error_logger.log_error(
-                    base_result["error_message"],
-                    "emotions_recognition_model",
-                    "predict"
-                )
-                if expected_emotion:
-                    return False
-                else:
-                    return {"emotion": "unknown", "confidence": 0.0}
-            
-            features_list = base_result["features_list"]
-            
-            # Для прогнозирования используем только оригинальные признаки
-            features: torch.Tensor = features_list[0]
-            
-            # Получаем предсказание модели
-            prediction_result = self._get_prediction_from_model(features)
-            confidence = prediction_result["confidence"]
-            predicted_class_index_int = prediction_result["predicted_class_index"]
-            
-            # Если уверенность выше порога, распознаем эмоцию
-            if confidence >= MODELS_PARAMS['MIN_CONFIDENCE']:
-                # Получаем эмоцию по индексу класса
-                if predicted_class_index_int in self.index_to_emotion:
-                    emotion: str = self.index_to_emotion[predicted_class_index_int]
-                else:
-                    emotion = "unknown"
-            else:
-                emotion = "unknown"
-            
-            info_logger.info("End making prediction")
-            
-            # Если указана ожидаемая эмоция, сравниваем результат
-            if expected_emotion:
-                return emotion == expected_emotion and emotion != "unknown"
-            
-            # Иначе возвращаем распознанную эмоцию и уверенность
-            return {"emotion": emotion, "confidence": confidence}
-            
-        except Exception as e:
-            error_logger.log_exception(
-                e,
-                "emotions_recognition_model",
-                "predict",
-                "Ошибка при распознавании эмоции"
-            )
-            
-            if expected_emotion:
-                return False
-            else:
-                return {"emotion": "unknown", "confidence": 0.0}
+        return super().predict(audio_file, use_advanced_voting=False)
                 
-        finally:
-            info_logger.info("---End prediction process in EmotionRecognition model---")
-        
-    def compare_emotion(self, audio_file: FileStorage, expected_emotion: str) -> bool:
-        """
-        Сравнивает эмоцию из аудиофайла с ожидаемой эмоцией.
-        
-        Args:
-            audio_file: Аудиофайл для распознавания
-            expected_emotion: Ожидаемая эмоция для сравнения
-            
-        Returns:
-            bool: True, если эмоции совпадают, False в противном случае
-        """
-        info_logger.info("---Start emotion comparison process in EmotionRecognition model---")
-        try:
-            # Используем существующий метод predict с параметром expected_emotion
-            result = cast(bool, self.predict(audio_file, expected_emotion))
-            info_logger.info(f"Emotion comparison result: {result}")
-            return result
-        finally:
-            info_logger.info("---End emotion comparison process in EmotionRecognition model---")
-            

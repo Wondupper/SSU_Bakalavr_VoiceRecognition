@@ -132,12 +132,9 @@ def identify() -> Response:
     """
     Идентификация пользователя и проверка эмоции по аудиофайлу
     """
-    info_logger.info("---Start identification process in API---")
     try:
         # Проверка наличия файла в запросе
-        info_logger.info("Checking for audio file in request")
         if 'audio' not in request.files:
-            info_logger.info("No audio file provided in request")
             return jsonify({
                 'success': False,
                 'message': 'Аудиофайл не предоставлен',
@@ -147,12 +144,10 @@ def identify() -> Response:
             })
         
         # Получение файла и параметров
-        info_logger.info("Getting audio file and parameters")
         audio_file: FileStorage = request.files['audio']
         expected_emotion: Optional[str] = request.form.get('expected_emotion', None)
         
         if not expected_emotion:
-            info_logger.info("No expected emotion provided")
             return jsonify({
                 'success': False,
                 'message': 'Ожидаемая эмоция не указана',
@@ -162,9 +157,7 @@ def identify() -> Response:
             })
             
         # Проверка, что модели обучены
-        info_logger.info("Checking if models are trained")
         if not voice_id_model.is_trained:
-            info_logger.info("Voice identification model is not trained")
             return jsonify({
                 'success': False,
                 'message': 'Модель идентификации не обучена',
@@ -174,7 +167,6 @@ def identify() -> Response:
             })
             
         if not emotion_model.is_trained:
-            info_logger.info("Emotion recognition model is not trained")
             return jsonify({
                 'success': False,
                 'message': 'Модель эмоций не обучена',
@@ -184,29 +176,17 @@ def identify() -> Response:
             })
         
         # Напрямую идентифицируем пользователя по голосу
-        info_logger.info("Starting voice identification")
         identity: str = voice_id_model.predict(audio_file)
-        info_logger.info(f"Voice identification result: {identity}")
         
-        # Получаем результат сравнения эмоций
-        info_logger.info("Starting emotion comparison")
-        emotion_match: bool = emotion_model.compare_emotion(audio_file, expected_emotion)
-        info_logger.info(f"Emotion comparison result: {emotion_match}")
         
         # Получаем распознанную эмоцию
-        info_logger.info("Getting detected emotion")
-        detected_emotion: Union[str, Dict[str, Union[str, float]]] = emotion_model.predict(audio_file)
-        
-        # Извлекаем название эмоции если результат - словарь
-        emotion_name: str = detected_emotion if isinstance(detected_emotion, str) else detected_emotion.get("emotion", "unknown")
-        info_logger.info(f"Detected emotion: {emotion_name}")
+        detected_emotion: str = emotion_model.predict(audio_file)
         
         # Рассчитываем успешность идентификации
-        info_logger.info("Calculating identification success")
         success: bool = True
         message: str = "Идентификация выполнена успешно"
         
-        if identity == "unknown" and emotion_name == "unknown":
+        if identity == "unknown" and detected_emotion == "unknown":
             success = False
             message = "Не удалось распознать пользователя и эмоцию"
             info_logger.info("Failed to recognize both user and emotion")
@@ -214,22 +194,22 @@ def identify() -> Response:
             success = False
             message = "Не удалось распознать пользователя"
             info_logger.info("Failed to recognize user")
-        elif emotion_name == "unknown":
+        elif detected_emotion == "unknown":
             success = False
             message = "Не удалось распознать эмоцию"
             info_logger.info("Failed to recognize emotion")
-        elif not emotion_match:
+        elif expected_emotion != detected_emotion:
             success = False
-            message = f"Эмоция не соответствует ожидаемой ({emotion_name} вместо {expected_emotion})"
-            info_logger.info(f"Emotion mismatch: {emotion_name} instead of {expected_emotion}")
+            message = f"Эмоция не соответствует ожидаемой ({detected_emotion} вместо {expected_emotion})"
+            info_logger.info(f"Emotion mismatch: {detected_emotion} instead of {expected_emotion}")
         
         info_logger.info(f"Final identification result - Success: {success}, Message: {message}")
         return jsonify({
             'success': success,
             'message': message,
             'identity': identity,
-            'emotion': emotion_name,
-            'match': emotion_match
+            'emotion': expected_emotion,
+            'match': detected_emotion
         })
         
     except Exception as e:
@@ -247,8 +227,6 @@ def identify() -> Response:
             'emotion': None,
             'match': False
         })
-    finally:
-        info_logger.info("---End identification process in API---")
 
 
 @api_bp.route('/daily_emotion', methods=['GET'])

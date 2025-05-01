@@ -114,4 +114,4 @@ class VoiceIdentificationModel(AudioModelBase[VoiceIdentificationNN]):
         Returns:
             str: Имя пользователя или "unknown", если не удалось идентифицировать
         """
-        return super().predict_extended(audio_file, use_advanced_voting=True)
+        return super().predict_extended(audio_file)

@@ -123,8 +123,9 @@ class AudioModelBase(Generic[T]):
             # Создаем модель или обновляем существующую
             if self.model is None:
                 # Создаем новую модель
-                input_dim: int = features.size(2)
-                self.model = T(input_dim, len(self.classes)).to(self.device)
+                input_dim: int = X.size(2)
+                model_class = self.__class__.__orig_bases__[0].__args__[0]
+                self.model = model_class(input_dim, len(self.classes)).to(self.device)
             
             # Настройка обучения
             criterion: nn.CrossEntropyLoss = nn.CrossEntropyLoss()

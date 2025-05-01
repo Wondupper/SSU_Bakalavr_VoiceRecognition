@@ -124,5 +124,5 @@ class EmotionRecognitionModel(AudioModelBase[EmotionRecognitionNN]):
         Returns:
             str: Предсказанная эмоция
         """
-        return super().predict(audio_file, use_advanced_voting=False)
+        return super().predict(audio_file)
                 

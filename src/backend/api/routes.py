@@ -250,24 +250,6 @@ def identify() -> Response:
     finally:
         info_logger.info("---End identification process in API---")
 
-@api_bp.route('/status', methods=['GET'])
-def get_status() -> Tuple[Response, int]:
-    """
-    Эндпоинт для получения статуса моделей
-    """
-    try:
-        return jsonify({
-            'voice_id_training': voice_id_model.is_training,
-            'emotion_training': emotion_model.is_training
-        }), 200
-    except Exception as e:
-        error_logger.log_exception(
-            e,
-            "api",
-            "get_status",
-            "Ошибка при получении статуса моделей"
-        )
-        return jsonify({'error': f'Ошибка получения статуса: {str(e)}'}), 500
 
 @api_bp.route('/daily_emotion', methods=['GET'])
 def get_daily_emotion_endpoint() -> Tuple[Response, int]:

@@ -82,111 +82,20 @@ document.addEventListener('DOMContentLoaded', () => {
         })
         .then(response => response.json())
         .then(data => {
+            loadingIndicator.style.display = 'none';
+            
             if (data.error) {
-                loadingIndicator.style.display = 'none';
                 showStatus('Ошибка: ' + data.error, 'error');
                 return;
             }
             
-            // Проверяем статус обучения (поддерживаем как новый, так и старый формат API)
-            if (data.status === 'started' || data.message) {
-                showStatus('Обучение модели началось. Это может занять некоторое время...', 'info');
-                
-                // Начинаем мониторинг прогресса обучения
-                startTrainingProgressMonitor();
-            } else {
-                loadingIndicator.style.display = 'none';
-                showStatus('Произошла ошибка при обучении модели', 'error');
-            }
+            showStatus('Обучение модели успешно завершено!', 'success');
         })
         .catch(error => {
             loadingIndicator.style.display = 'none';
             showStatus('Ошибка сервера: ' + error.message, 'error');
             logErrorToSystem(error.message, "emotion_training", window.location.pathname);
         });
-    }
-    
-    // Функция для мониторинга прогресса обучения
-    function startTrainingProgressMonitor() {
-        const statusContainer = document.createElement('div');
-        statusContainer.className = 'training-stats';
-        statusContainer.innerHTML = 'Обучение модели началось...';
-        
-        // Добавляем элементы в индикатор загрузки
-        loadingIndicator.innerHTML = '<div class="spinner"></div>';
-        loadingIndicator.appendChild(statusContainer);
-        
-        let isTrainingCompleted = false;
-        
-        // Запускаем интервал для проверки прогресса
-        const progressInterval = setInterval(() => {
-            // Если обучение уже завершено, прекращаем опрос
-            if (isTrainingCompleted) {
-                clearInterval(progressInterval);
-                return;
-            }
-            
-            fetch('/api/training_progress?model_type=emotion')
-                .then(response => {
-                    // Проверяем успешность ответа
-                    if (!response.ok) {
-                        throw new Error(`HTTP error: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    // Проверяем статус обучения
-                    if (data.status === 'completed') {
-                        // Обучение завершено
-                        isTrainingCompleted = true;
-                        clearInterval(progressInterval);
-                        loadingIndicator.style.display = 'none';
-                        showStatus('Обучение модели успешно завершено!', 'success');
-                        
-                        // Очищаем индикатор для будущих запусков
-                        setTimeout(() => {
-                            loadingIndicator.innerHTML = '<div class="spinner"></div>';
-                        }, 1000);
-                    } else if (data.status === 'error') {
-                        // Ошибка обучения
-                        isTrainingCompleted = true;
-                        clearInterval(progressInterval);
-                        loadingIndicator.style.display = 'none';
-                        showStatus('Ошибка при обучении модели. Пожалуйста, попробуйте еще раз.', 'error');
-                        
-                        // Очищаем индикатор для будущих запусков
-                        setTimeout(() => {
-                            loadingIndicator.innerHTML = '<div class="spinner"></div>';
-                        }, 1000);
-                    }
-                })
-                .catch(error => {
-                    // Если обучение завершено, сервер может перестать отвечать на запросы
-                    // прогресса, что вызовет ошибку - это не всегда плохо
-                    if (isTrainingCompleted) {
-                        return;
-                    }
-                    
-                    // Проверяем, нет ли признаков успешного завершения обучения
-                    // в сообщении об ошибке
-                    const errorMessage = error.toString().toLowerCase();
-                    if (errorMessage.includes('not found') || 
-                        errorMessage.includes('no training in progress')) {
-                        // Вероятно, обучение завершилось успешно
-                        isTrainingCompleted = true;
-                        clearInterval(progressInterval);
-                        loadingIndicator.style.display = 'none';
-                        showStatus('Обучение модели успешно завершено!', 'success');
-                        
-                        // Очищаем индикатор для будущих запусков
-                        setTimeout(() => {
-                            loadingIndicator.innerHTML = '<div class="spinner"></div>';
-                        }, 1000);
-                    } else {
-                        console.error('Ошибка при проверке прогресса:', error);
-                    }
-                });
-        }, 1000);
     }
     
     // Функция отображения статуса

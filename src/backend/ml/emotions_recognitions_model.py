@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
-from werkzeug.datastructures import FileStorage
-from backend.config import EMOTIONS
-from backend.ml.audio_model_base import AudioModelBase
+from src.backend.config import EMOTIONS
+from src.backend.ml.audio_model_base import AudioModelBase
 
 class EmotionRecognitionNN(nn.Module):
     """
@@ -114,15 +113,4 @@ class EmotionRecognitionModel(AudioModelBase[EmotionRecognitionNN]):
             
         self.index_to_emotion = self.index_to_class  # Для совместимости
     
-    def predict(self, audio_file: FileStorage) -> str:
-        """
-        Распознает эмоцию из аудиофайла.
-        
-        Args:
-            audio_file: Аудиофайл для распознавания
-            
-        Returns:
-            str: Предсказанная эмоция
-        """
-        return super().predict(audio_file)
                 

@@ -3,11 +3,11 @@ import torch.nn as nn
 import torch.optim as optim
 from typing import List, Dict, Tuple, Union, Optional, Any, Set, TypeVar, Generic, cast
 from werkzeug.datastructures import FileStorage
-from backend.api.error_logger import error_logger
-from backend.api.info_logger import info_logger
-from backend.config import MODELS_PARAMS
-from backend.ml.utils.augmentation import apply_augmentation
-from backend.ml.utils.features_tensors_extractor import get_features_tensors_from_audio
+from src.backend.loggers.error_logger import error_logger
+from src.backend.loggers.info_logger import info_logger
+from src.backend.config import MODELS_PARAMS
+from src.backend.ml.utils.augmentation import apply_augmentation
+from src.backend.ml.utils.features_tensors_extractor import get_features_tensors_from_audio
 
 T = TypeVar('T', bound=nn.Module)
 
@@ -122,10 +122,22 @@ class AudioModelBase(Generic[T]):
             
             # Создаем модель или обновляем существующую
             if self.model is None:
-                # Создаем новую модель
                 input_dim: int = X.size(2)
                 model_class = self.__class__.__orig_bases__[0].__args__[0]
                 self.model = model_class(input_dim, len(self.classes)).to(self.device)
+            else:
+                # Расширяем выходной слой, если добавился новый класс
+                new_num_classes = len(self.classes)
+                # Последний линейный слой в fc должен быть nn.Linear(in_f, out_f)
+                old_fc = self.model.fc[-1]
+                old_out = old_fc.out_features
+                if new_num_classes != old_out:
+                    new_fc = nn.Linear(old_fc.in_features, new_num_classes).to(self.device)
+                    with torch.no_grad():
+                        # Копируем старые веса/биасы в первые столбцы
+                        new_fc.weight[:old_out] = old_fc.weight
+                        new_fc.bias[:old_out]   = old_fc.bias
+                    self.model.fc[-1] = new_fc
             
             # Настройка обучения
             criterion: nn.CrossEntropyLoss = nn.CrossEntropyLoss()
@@ -270,7 +282,7 @@ class AudioModelBase(Generic[T]):
             "confidence": confidence
         }
 
-    def predict_extended(self, audio_file: FileStorage) -> str:
+    def predict(self, audio_file: FileStorage) -> str:
         """
         Расшиернный метод для предсказания класса из аудиофайла.
         
@@ -282,121 +294,28 @@ class AudioModelBase(Generic[T]):
         """
         try:
             features_list = self._get_features_tensors_from_audio(audio_file)
-            
             if not features_list:
-                error_logger.log_error(
-                    "Не удалось извлечь признаки из файла",
-                    self.module_name,
-                    "predict"
-                )
+                # … логирование …
                 return "unknown"
-            
-            # Расширенный алгоритм голосования (для идентификации по голосу)
-            # Преобразуем в тензоры PyTorch
-            X: torch.Tensor = torch.stack(features_list).to(self.device)
-            
-            # Улучшенный алгоритм голосования по результатам фрагментов
-            vote_counts: Dict[str, int] = {}
-            confidence_sums: Dict[str, float] = {}
-            prediction_confidences: Dict[str, List[float]] = {}  # Для хранения всех уверенностей по классам
-            
+
+            # Собираем батч всех фрагментов
+            X = torch.stack(features_list).to(self.device)
+
+            # Базовый упрощённый алгоритм: суммируем логиты
+            self.model.eval()
             with torch.no_grad():
-                # Получаем все предсказания для всех фрагментов
-                all_predictions: List[Dict[str, Any]] = []
-                for feature in X:
-                    prediction_result = self._get_prediction_from_model(feature)
-                    confidence = prediction_result["confidence"]
-                    predicted_class_index_int = prediction_result["predicted_class_index"]
-                    
-                    # Если класс распознан с достаточной уверенностью, добавляем в результаты
-                    if predicted_class_index_int in self.index_to_class:
-                        label: str = self.index_to_class[predicted_class_index_int]
-                    else:
-                        label = "unknown"
-                    
-                    # Сохраняем результат предсказания
-                    all_predictions.append({
-                        "label": label,
-                        "confidence": confidence,
-                        "index": predicted_class_index_int
-                    })
-                    
-                    # Обновляем статистику для каждого класса
-                    if label not in prediction_confidences:
-                        prediction_confidences[label] = []
-                    prediction_confidences[label].append(confidence)
-            
-            # Если нет предсказаний, возвращаем "unknown"
-            if not all_predictions:
-                info_logger.info("No predictions made")
-                return "unknown"
-            
-            # Обрабатываем предсказания с учетом порога уверенности
-            for pred in all_predictions:
-                label = pred["label"]
-                confidence = pred["confidence"]
-                
-                # Учитываем только предсказания с уверенностью выше порога
-                if confidence >= MODELS_PARAMS['MIN_CONFIDENCE']:
-                    if label not in vote_counts:
-                        vote_counts[label] = 0
-                        confidence_sums[label] = 0.0
-                    
-                    vote_counts[label] += 1
-                    confidence_sums[label] += confidence
-            
-            # Если ни одно предсказание не прошло порог уверенности
-            if not vote_counts:
-                info_logger.info("No predictions passed confidence threshold")
-                return "unknown"
-            
-            # Вычисляем статистические характеристики для каждого класса
-            class_stats: Dict[str, Dict[str, float]] = {}
-            for label, confidences in prediction_confidences.items():
-                if not confidences:
-                    continue
-                    
-                # Вычисляем среднюю и медианную уверенность
-                avg_conf = sum(confidences) / len(confidences)
-                median_conf = sorted(confidences)[len(confidences) // 2]
-                
-                # Вычисляем долю предсказаний с уверенностью выше порога
-                confident_preds = sum(1 for c in confidences if c >= MODELS_PARAMS['MIN_CONFIDENCE'])
-                confidence_ratio = confident_preds / len(confidences) if confidences else 0
-                
-                class_stats[label] = {
-                    "avg_confidence": avg_conf,
-                    "median_confidence": median_conf,
-                    "confidence_ratio": confidence_ratio,
-                    "vote_count": vote_counts.get(label, 0),
-                    "total_samples": len(confidences)
-                }
-                
-                info_logger.info(f"Class {label} stats: {class_stats[label]}")
-            
-            # Определение лучшего класса на основе голосования и статистик
-            if "unknown" in class_stats:
-                # Если "unknown" имеет высокий рейтинг, исключаем его из рассмотрения
-                del class_stats["unknown"]
-            
-            if not class_stats:
-                info_logger.info("No valid classes after statistics analysis")
-                return "unknown"
-            
-            # Находим класс с наивысшим соотношением уверенных предсказаний
-            best_class = max(class_stats.keys(), 
-                            key=lambda k: (class_stats[k]["confidence_ratio"],
-                                            class_stats[k]["avg_confidence"]))
-            
-            # Проверка финального результата
-            if (class_stats[best_class]["avg_confidence"] >= MODELS_PARAMS['MIN_AVG_CONFIDENCE'] and
-                class_stats[best_class]["confidence_ratio"] >= 0.5):
-                info_logger.info(f"Prediction result: {best_class} with avg confidence: {class_stats[best_class]['avg_confidence']:.4f}")
-                return best_class
+                outputs = self.model(X)                       # [num_fragments, num_classes]
+                summed_logits = outputs.sum(dim=0, keepdim=True)  # [1, num_classes]
+                probs = torch.softmax(summed_logits, dim=1)[0]    # [num_classes]
+                best_idx = torch.argmax(probs).item()
+                best_conf = probs[best_idx].item()
+
+            # Если уверенность хотя бы MIN_AVG_CONFIDENCE — возвращаем класс
+            if best_conf >= MODELS_PARAMS['MIN_AVG_CONFIDENCE']:
+                return self.index_to_class.get(best_idx, "unknown")
             else:
-                info_logger.info(f"Prediction rejected: {best_class} (insufficient confidence statistics)")
                 return "unknown"
-                
+
         except Exception as e:
             error_logger.log_exception(
                 e,
@@ -405,60 +324,7 @@ class AudioModelBase(Generic[T]):
                 "Ошибка при предсказании"
             )
             return "unknown"
+
             
         finally:
             info_logger.info(f"---End extended prediction process in {self.module_name} model---")
-
-    
-    def predict(self, audio_file: FileStorage) -> str:
-        """
-        Простой метод для предсказания класса из аудиофайла.
-        
-        Args:
-            audio_file: Аудиофайл для распознавания
-            
-        Returns:
-            str: Предсказанный класс или "unknown", если не удалось предсказать
-        """
-        try:
-            features_list = self._get_features_tensors_from_audio(audio_file)
-            
-            if not features_list:
-                error_logger.log_error(
-                    "Не удалось извлечь признаки из файла",
-                    self.module_name,
-                    "predict"
-                )
-                return "unknown"
-            
-            # Простой алгоритм (для распознавания эмоций) - используем только первый элемент из features_list
-            features = features_list[0]
-            
-            # Получаем предсказание модели
-            prediction_result = self._get_prediction_from_model(features)
-            confidence = prediction_result["confidence"]
-            predicted_class_index_int = prediction_result["predicted_class_index"]
-            
-            # Если уверенность выше порога, распознаем класс
-            if confidence >= MODELS_PARAMS['MIN_CONFIDENCE']:
-                # Получаем класс по индексу
-                if predicted_class_index_int in self.index_to_class:
-                    result: str = self.index_to_class[predicted_class_index_int]
-                else:
-                    result = "unknown"
-            else:
-                result = "unknown"
-            
-            info_logger.info(f"Recognized class: {result} with confidence: {confidence}")
-            
-            # Возвращаем распознанный класс
-            return result
-                
-        except Exception as e:
-            error_logger.log_exception(
-                e,
-                self.module_name,
-                "predict",
-                "Ошибка при предсказании"
-            )
-            return "unknown"

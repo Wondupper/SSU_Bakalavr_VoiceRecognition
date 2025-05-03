@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from werkzeug.datastructures import FileStorage
-from backend.ml.audio_model_base import AudioModelBase
+from src.backend.ml.audio_model_base import AudioModelBase
 
 class VoiceIdentificationNN(nn.Module):
     """
@@ -104,14 +104,3 @@ class VoiceIdentificationModel(AudioModelBase[VoiceIdentificationNN]):
         super().__init__("voice_identification")
         self.index_to_name = self.index_to_class  # Для совместимости
      
-    def predict(self, audio_file: FileStorage) -> str:
-        """
-        Идентифицирует пользователя по голосу из аудиофайла.
-        
-        Args:
-            audio_file: Аудиофайл для идентификации
-            
-        Returns:
-            str: Имя пользователя или "unknown", если не удалось идентифицировать
-        """
-        return super().predict_extended(audio_file)

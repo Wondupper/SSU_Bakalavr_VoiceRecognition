@@ -1,12 +1,12 @@
 from flask import Blueprint, request, jsonify, Response
 import random
 from typing import Tuple, Any, Dict, Union, Optional, List
-from backend.ml.voice_identification_model import VoiceIdentificationModel
-from backend.ml.emotions_recognitions_model import EmotionRecognitionModel
+from src.backend.ml.voice_identification_model import VoiceIdentificationModel
+from src.backend.ml.emotions_recognitions_model import EmotionRecognitionModel
 from werkzeug.datastructures import FileStorage
-from backend.api.error_logger import error_logger
-from backend.config import EMOTIONS
-from backend.api.info_logger import info_logger
+from src.backend.loggers.error_logger import error_logger
+from src.backend.config import EMOTIONS
+from src.backend.loggers.info_logger import info_logger
 
 # Инициализация моделей
 voice_id_model: VoiceIdentificationModel = VoiceIdentificationModel()

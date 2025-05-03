@@ -5,9 +5,9 @@ import io
 import random
 from typing import List, Optional
 from werkzeug.datastructures import FileStorage
-from backend.api.error_logger import error_logger
-from backend.config import SAMPLE_RATE, AUDIO_FRAGMENT_LENGTH, MODELS_PARAMS
-from backend.ml.utils.augmentation import apply_augmentation
+from src.backend.loggers.error_logger import error_logger
+from src.backend.config import SAMPLE_RATE, AUDIO_FRAGMENT_LENGTH, MODELS_PARAMS
+from src.backend.ml.utils.augmentation import apply_augmentation
 
 def get_features_tensors_from_audio(audio_file: FileStorage, module_name: str) -> List[torch.Tensor]:
     """

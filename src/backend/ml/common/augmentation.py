@@ -5,7 +5,7 @@ from typing import List
 from src.backend.loggers.error_logger import error_logger
 from src.backend.config import SAMPLE_RATE, AUGMENTATION
 
-def apply_augmentation(waveform: torch.Tensor, module_name: str) -> List[torch.Tensor]:
+def apply_augmentation(waveform: torch.Tensor) -> List[torch.Tensor]:
     """
     Применяет аугментацию к аудиофайлу для расширения обучающей выборки.
     
@@ -108,7 +108,7 @@ def apply_augmentation(waveform: torch.Tensor, module_name: str) -> List[torch.T
     except Exception as e:
         error_logger.log_exception(
             e,
-            module_name,
+            "augmentation",
             "apply_augmentation",
             "Ошибка при аугментации аудио"
         )

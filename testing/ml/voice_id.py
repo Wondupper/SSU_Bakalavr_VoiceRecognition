@@ -7,7 +7,7 @@ from werkzeug.datastructures import FileStorage
 project_root = Path(__file__).parents[2]
 sys.path.append(str(project_root))
 
-from src.backend.ml.voice_identification_model import VoiceIdentificationModel
+from backend.ml.voice_identification.voice_identification_model import VoiceIdentificationModel
 
 def test_voice_identification_one_trained():
     """

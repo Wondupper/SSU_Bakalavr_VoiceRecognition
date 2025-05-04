@@ -5,38 +5,122 @@ from typing import List, Dict, Tuple, Union, Optional, Any, Set, TypeVar, Generi
 from werkzeug.datastructures import FileStorage
 from src.backend.loggers.error_logger import error_logger
 from src.backend.loggers.info_logger import info_logger
-from src.backend.config import MODELS_PARAMS
-from src.backend.ml.utils.augmentation import apply_augmentation
-from src.backend.ml.utils.features_tensors_extractor import get_features_tensors_from_audio
+from src.backend.config import EMOTIONS, EMOTIONS_MODEL_PARAMS
+from src.backend.ml.common.features_tensors_extractor import get_features_tensors_from_audio
 
-T = TypeVar('T', bound=nn.Module)
-
-class AudioModelBase(Generic[T]):
+class EmotionRecognitionNN(nn.Module):
     """
-    Базовый класс для моделей обработки аудио.
-    
-    Атрибуты:
-        model: Модель PyTorch 
-        classes: Словарь классов и соответствующих им индексов
-        index_to_class: Словарь индексов и соответствующих им классов
-        device: Устройство для обучения модели (CPU/GPU)
-        module_name: Имя модуля для логирования
+    Нейронная сеть для распознавания эмоций в речи на основе PyTorch.
+    Архитектура упрощена для предотвращения переобучения на малых наборах данных.
     """
-    
-    def __init__(self, module_name: str) -> None:
+    def __init__(self, input_dim: int, num_classes: int) -> None:
         """
-        Инициализирует базовую модель для обработки аудио.
+        Инициализация сети для распознавания эмоций
         
         Args:
-            module_name: Имя модуля для логирования
+            input_dim: Размерность входных данных (features)
+            num_classes: Количество классов (эмоций)
+        """
+
+        super(EmotionRecognitionNN, self).__init__()
+        
+        # Уменьшаем количество фильтров и добавляем больше Dropout
+        # Первый сверточный блок с сильной регуляризацией
+        self.conv1 = nn.Sequential(
+            nn.Conv1d(input_dim, 32, kernel_size=5, stride=1, padding=2),
+            nn.LeakyReLU(0.1),
+            nn.BatchNorm1d(32),
+            nn.Dropout(0.3)  # Увеличенный дропаут
+        )
+        
+        # Второй сверточный блок с Max Pooling для уменьшения размерности
+        self.conv2 = nn.Sequential(
+            nn.Conv1d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(0.1),
+            nn.BatchNorm1d(64),
+            nn.MaxPool1d(2),
+            nn.Dropout(0.4)  # Увеличенный дропаут
+        )
+        
+        # Третий сверточный блок - меньше фильтров, чем было раньше
+        self.conv3 = nn.Sequential(
+            nn.Conv1d(64, 64, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(0.1),
+            nn.BatchNorm1d(64),
+            nn.MaxPool1d(2),
+            nn.Dropout(0.4)  # Увеличенный дропаут
+        )
+        
+        # Глобальный пулинг
+        self.global_pool = nn.AdaptiveAvgPool1d(1)
+        
+        # Полносвязный слой для классификации - упрощен
+        self.fc = nn.Sequential(
+            nn.Linear(64, 32),
+            nn.LeakyReLU(0.1),
+            nn.Dropout(0.5),  # Высокий уровень дропаута для предотвращения переобучения
+            nn.Linear(32, num_classes)
+        )
+    
+
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Прямой проход через сеть
+        
+        Args:
+            x: Входные данные [batch_size, features, time]
+            
+        Returns:
+            Предсказания модели
+        """
+
+        # Если данные приходят в формате [batch_size, time, features], 
+        # преобразуем их в формат [batch_size, features, time]
+        if x.shape[1] > x.shape[2]:
+            x = x.transpose(1, 2)
+
+        # Сверточные блоки
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        
+        # Глобальный пулинг
+        x = self.global_pool(x)
+        x = x.view(x.size(0), -1)
+        
+        # Полносвязный слой
+        x = self.fc(x)
+
+        return x
+
+class EmotionRecognitionModel:
+    """
+    Модель для распознавания эмоций в речи.
+    
+    Атрибуты:
+        model: Модель PyTorch для распознавания эмоций
+        classes: Словарь эмоций и соответствующих им индексов
+        index_to_emotion: Словарь индексов и соответствующих им эмоций
+        device: Устройство для обучения модели (CPU/GPU)
+    """
+    
+    def __init__(self) -> None:
+        """
+        Инициализирует модель для распознавания эмоций в речи.
         """
         # Инициализируем атрибуты
-        self.model: Optional[T] = None
+        self.module_name = "emotions_recognitions_model"
+        self.model = None
         self.classes: Dict[str, int] = {}  # Словарь {класс: индекс}
         self.index_to_class: Dict[int, str] = {}  # Словарь {индекс: класс}
         self.device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.module_name = module_name
         
+        # Инициализируем словари на основе списка эмоций из конфига
+        for idx, emotion in enumerate(EMOTIONS):
+            self.classes[emotion] = idx
+            self.index_to_class[idx] = emotion
+
     @property
     def is_trained(self) -> bool:
         """
@@ -46,30 +130,6 @@ class AudioModelBase(Generic[T]):
             bool: True, если модель обучена, иначе False
         """
         return self.model is not None and len(self.classes) > 0
-        
-    def _apply_augmentation(self, waveform: torch.Tensor) -> List[torch.Tensor]:
-        """
-        Применяет аугментацию к аудиофайлу для расширения обучающей выборки.
-        
-        Args:
-            waveform: Тензор аудио [channels, time]
-            
-        Returns:
-            Список аугментированных аудиофайлов
-        """
-        return apply_augmentation(waveform, self.module_name)
-    
-    def _get_features_tensors_from_audio(self, audio_file: FileStorage) -> List[torch.Tensor]:
-        """
-        Извлекает признаки из аудиофайла с помощью torchaudio
-        
-        Args:
-            audio_file: Файл аудио (объект FileStorage Flask)
-            
-        Returns:
-            Список тензоров признаков для каждого фрагмента
-        """
-        return get_features_tensors_from_audio(audio_file, self.module_name)
     
     def train(self, audio_file: FileStorage, class_name: str) -> bool:
         """
@@ -103,7 +163,7 @@ class AudioModelBase(Generic[T]):
             class_idx = self.classes[class_name]
             
             # Извлекаем признаки из аудиофайлов 
-            features: List[torch.Tensor] = self._get_features_tensors_from_audio(audio_file)
+            features: List[torch.Tensor] = get_features_tensors_from_audio(audio_file)
             
             if not features:
                 error_logger.log_error(
@@ -143,40 +203,40 @@ class AudioModelBase(Generic[T]):
             criterion: nn.CrossEntropyLoss = nn.CrossEntropyLoss()
             optimizer: optim.Adam = optim.Adam(
                 self.model.parameters(), 
-                lr=MODELS_PARAMS['LEARNING_RATE'], 
-                weight_decay=MODELS_PARAMS['WEIGHT_DECAY']
+                lr=EMOTIONS_MODEL_PARAMS['LEARNING_RATE'], 
+                weight_decay=EMOTIONS_MODEL_PARAMS['WEIGHT_DECAY']
             )
             scheduler: optim.lr_scheduler.ReduceLROnPlateau = optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, 
                 mode='min', 
-                factor=MODELS_PARAMS['SCHEDULER_FACTOR'], 
-                patience=MODELS_PARAMS['SCHEDULER_PATIENCE'], 
+                factor=EMOTIONS_MODEL_PARAMS['SCHEDULER_FACTOR'], 
+                patience=EMOTIONS_MODEL_PARAMS['SCHEDULER_PATIENCE'], 
                 min_lr=0.00001
             )
             
             # Создаем загрузчики данных
             dataset = torch.utils.data.TensorDataset(X, y)
-            train_size: int = int(MODELS_PARAMS['TRAIN_SPLIT'] * len(dataset))
+            train_size: int = int(EMOTIONS_MODEL_PARAMS['TRAIN_SPLIT'] * len(dataset))
             val_size: int = len(dataset) - train_size
             train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
             
             train_loader = torch.utils.data.DataLoader(
                 train_dataset, 
-                batch_size=min(MODELS_PARAMS['BATCH_SIZE'], len(train_dataset)), 
+                batch_size=min(EMOTIONS_MODEL_PARAMS['BATCH_SIZE'], len(train_dataset)), 
                 shuffle=True
             )
             val_loader = torch.utils.data.DataLoader(
                 val_dataset, 
-                batch_size=min(MODELS_PARAMS['BATCH_SIZE'], len(val_dataset))
+                batch_size=min(EMOTIONS_MODEL_PARAMS['BATCH_SIZE'], len(val_dataset))
             )
             
             # Настройка раннего останова
             best_val_loss: float = float('inf')
-            patience: int = MODELS_PARAMS['EARLY_STOP_PATIENCE']
+            patience: int = EMOTIONS_MODEL_PARAMS['EARLY_STOP_PATIENCE']
             patience_counter: int = 0
             
             # Обучение
-            num_epochs: int = MODELS_PARAMS['EPOCHS']
+            num_epochs: int = EMOTIONS_MODEL_PARAMS['EPOCHS']
             for epoch in range(num_epochs):
                 # Обучение
                 self.model.train()
@@ -245,9 +305,9 @@ class AudioModelBase(Generic[T]):
                 "Ошибка при обучении модели"
             )
             return False
-    
-    
-    def _get_prediction_from_model(self, features: torch.Tensor) -> Dict[str, Any]:
+        
+
+    def get_prediction_from_model(self, features: torch.Tensor) -> Dict[str, Any]:
         """
         Получает предсказание от модели для заданных признаков.
         
@@ -281,6 +341,7 @@ class AudioModelBase(Generic[T]):
             "predicted_class_index": predicted_class_index_int,
             "confidence": confidence
         }
+    
 
     def predict(self, audio_file: FileStorage) -> str:
         """
@@ -293,7 +354,7 @@ class AudioModelBase(Generic[T]):
             str: Предсказанный класс или "unknown", если не удалось предсказать
         """
         try:
-            features_list = self._get_features_tensors_from_audio(audio_file)
+            features_list = get_features_tensors_from_audio(audio_file)
             if not features_list:
                 # … логирование …
                 return "unknown"
@@ -311,7 +372,7 @@ class AudioModelBase(Generic[T]):
                 best_conf = probs[best_idx].item()
 
             # Если уверенность хотя бы MIN_AVG_CONFIDENCE — возвращаем класс
-            if best_conf >= MODELS_PARAMS['MIN_AVG_CONFIDENCE']:
+            if best_conf >= EMOTIONS_MODEL_PARAMS['MIN_AVG_CONFIDENCE']:
                 return self.index_to_class.get(best_idx, "unknown")
             else:
                 return "unknown"
@@ -328,3 +389,5 @@ class AudioModelBase(Generic[T]):
             
         finally:
             info_logger.info(f"---End extended prediction process in {self.module_name} model---")
+    
+                

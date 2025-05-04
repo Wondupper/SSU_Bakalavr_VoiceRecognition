@@ -7,9 +7,9 @@ from typing import List, Optional
 from werkzeug.datastructures import FileStorage
 from src.backend.loggers.error_logger import error_logger
 from src.backend.config import SAMPLE_RATE, AUDIO_FRAGMENT_LENGTH, MODELS_PARAMS
-from src.backend.ml.utils.augmentation import apply_augmentation
+from src.backend.ml.common.augmentation import apply_augmentation
 
-def get_features_tensors_from_audio(audio_file: FileStorage, module_name: str) -> List[torch.Tensor]:
+def get_features_tensors_from_audio(audio_file: FileStorage) -> List[torch.Tensor]:
     """
     Извлекает признаки из аудиофайла с помощью torchaudio
     
@@ -21,27 +21,16 @@ def get_features_tensors_from_audio(audio_file: FileStorage, module_name: str) -
         Список тензоров признаков для каждого фрагмента
     """
     try:
-        # Попытка загрузить аудиофайл напрямую из памяти
-        temp_filename: Optional[str] = None
-        try:
-            # Сохраняем содержимое файла в буфер
-            audio_buffer: io.BytesIO = io.BytesIO(audio_file.read())
-            # Сбрасываем указатель в начало буфера
-            audio_buffer.seek(0)
-            # Пытаемся загрузить аудио из буфера
-            waveform: torch.Tensor
-            sample_rate: int
-            waveform, sample_rate = torchaudio.load(audio_buffer)
-            # Сбрасываем указатель файла на начало для возможного дальнейшего использования
-            audio_file.seek(0)
-        except Exception as load_error:
-            # Если не удалось загрузить напрямую, используем временный файл
-            temp_id: int = random.randint(1000, 9999)
-            temp_filename = f"temp_audio_{module_name}_{temp_id}.wav"
-            audio_file.save(temp_filename)
-            waveform, sample_rate = torchaudio.load(temp_filename)
-            # Сбрасываем указатель файла на начало
-            audio_file.seek(0)
+        # Сохраняем содержимое файла в буфер
+        audio_buffer: io.BytesIO = io.BytesIO(audio_file.read())
+        # Сбрасываем указатель в начало буфера
+        audio_buffer.seek(0)
+        # Пытаемся загрузить аудио из буфера
+        waveform: torch.Tensor
+        sample_rate: int
+        waveform, sample_rate = torchaudio.load(audio_buffer)
+        # Сбрасываем указатель файла на начало для возможного дальнейшего использования
+        audio_file.seek(0)
         
         # Делаем ресемплинг до нужной частоты
         if sample_rate != SAMPLE_RATE:
@@ -99,7 +88,7 @@ def get_features_tensors_from_audio(audio_file: FileStorage, module_name: str) -
             enhanced_waveform = enhanced_waveform / (torch.max(torch.abs(enhanced_waveform)) + 1e-6)
 
         # Применяем аугментацию к очищенной аудиоформе
-        augmented_waveforms: List[torch.Tensor] = apply_augmentation(enhanced_waveform, module_name)
+        augmented_waveforms: List[torch.Tensor] = apply_augmentation(enhanced_waveform)
         
         # Разбиение каждой аугментированной аудиоформы на фрагменты
         features_list: List[torch.Tensor] = []
@@ -170,20 +159,14 @@ def get_features_tensors_from_audio(audio_file: FileStorage, module_name: str) -
                 # Добавляем в список признаков
                 features_list.append(combined_features.squeeze(0).transpose(0, 1))
         
-        # Удаление временного файла, если он был создан
-        if temp_filename and os.path.exists(temp_filename):
-            os.remove(temp_filename)
             
         return features_list
         
     except Exception as e:
         error_logger.log_exception(
             e,
-            module_name,
+            "features_tensors_extractor",
             "get_features_tensors_from_audio",
             "Ошибка при извлечении признаков"
         )
-        # Удаление временного файла в случае ошибки, если он был создан
-        if temp_filename and os.path.exists(temp_filename):
-            os.remove(temp_filename)
         return []

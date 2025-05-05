@@ -7,6 +7,8 @@ from src.backend.loggers.error_logger import error_logger
 from src.backend.loggers.info_logger import info_logger
 from src.backend.config import VOICE_MODEL_PARAMS
 from src.backend.ml.common.features_tensors_extractor import get_features_tensors_from_audio
+from src.backend.ml.common.metrics_calculation import calculate_batch_metrics
+from backend.ml.common.train import train_one_epoch
 
 class VoiceIdentificationNN(nn.Module):
     """
@@ -147,7 +149,7 @@ class VoiceIdentificationModel:
             class_idx = self.classes[class_name]
             
             # Извлекаем признаки из аудиофайлов 
-            features: List[torch.Tensor] = get_features_tensors_from_audio(audio_file)
+            features: List[torch.Tensor] = get_features_tensors_from_audio(audio_file, VOICE_MODEL_PARAMS['FEATURE_TARGET_LENGTH'])
             
             if not features:
                 error_logger.log_error(
@@ -185,6 +187,7 @@ class VoiceIdentificationModel:
             
             # Настройка обучения
             criterion: nn.CrossEntropyLoss = nn.CrossEntropyLoss()
+            self.model.criterion = criterion  # Добавляем criterion как атрибут модели для расчета метрик
             optimizer: optim.Adam = optim.Adam(
                 self.model.parameters(), 
                 lr=VOICE_MODEL_PARAMS['LEARNING_RATE'], 
@@ -222,44 +225,27 @@ class VoiceIdentificationModel:
             # Обучение
             num_epochs: int = VOICE_MODEL_PARAMS['EPOCHS']
             for epoch in range(num_epochs):
-                # Обучение
-                self.model.train()
-                train_loss: float = 0.0
-                train_correct: int = 0
+                # Обучение - выполняем одну эпоху обучения
+                train_one_epoch(
+                    self.model,
+                    train_loader,
+                    optimizer,
+                    criterion,
+                    self.device,
+                    epoch=epoch,
+                    num_epochs=num_epochs
+                )
                 
-                for inputs, labels in train_loader:
-                    optimizer.zero_grad()
-                    outputs = self.model(inputs)
-                    loss = criterion(outputs, labels)
-                    loss.backward()
-                    optimizer.step()
-                    
-                    train_loss += loss.item() * inputs.size(0)
-                    _, preds = torch.max(outputs, 1)
-                    train_correct += torch.sum(preds == labels.data).item()
-                
-                train_loss = train_loss / len(train_loader.dataset)
-                train_acc: float = train_correct / len(train_loader.dataset)
-                
-                # Валидация
+                # Валидация - вычисляем метрики на валидационном наборе
                 self.model.eval()
-                val_loss: float = 0.0
-                val_correct: int = 0
-                
-                with torch.no_grad():
-                    for inputs, labels in val_loader:
-                        outputs = self.model(inputs)
-                        loss = criterion(outputs, labels)
-                        
-                        val_loss += loss.item() * inputs.size(0)
-                        _, preds = torch.max(outputs, 1)
-                        val_correct += torch.sum(preds == labels.data).item()
-                
-                val_loss = val_loss / len(val_loader.dataset)
-                val_acc: float = val_correct / len(val_loader.dataset)
-                
-                # Логирование процесса обучения
-                info_logger.info(f"Эпоха {epoch+1}/{num_epochs} - train_loss: {train_loss:.4f} - train_acc: {train_acc:.4f} - val_loss: {val_loss:.4f} - val_acc: {val_acc:.4f}")
+                val_loss = calculate_batch_metrics(
+                    self.model, 
+                    val_loader, 
+                    self.device, 
+                    num_classes=len(self.classes),
+                    epoch=epoch,
+                    num_epochs=num_epochs
+                )
                 
                 # Обновление планировщика скорости обучения
                 scheduler.step(val_loss)

@@ -6,10 +6,10 @@ import random
 from typing import List, Optional
 from werkzeug.datastructures import FileStorage
 from src.backend.loggers.error_logger import error_logger
-from src.backend.config import SAMPLE_RATE, AUDIO_FRAGMENT_LENGTH, MODELS_PARAMS
-from src.backend.ml.common.augmentation import apply_augmentation
+from src.backend.config import SAMPLE_RATE, AUDIO_FRAGMENT_LENGTH
+from src.backend.ml.common.augmentations.augmentator import apply_augmentation
 
-def get_features_tensors_from_audio(audio_file: FileStorage) -> List[torch.Tensor]:
+def get_features_tensors_from_audio(audio_file: FileStorage, target_length: int) -> List[torch.Tensor]:
     """
     Извлекает признаки из аудиофайла с помощью torchaudio
     
@@ -149,7 +149,6 @@ def get_features_tensors_from_audio(audio_file: FileStorage) -> List[torch.Tenso
                 combined_features: torch.Tensor = torch.cat([mfcc, delta, delta2, spec_features], dim=1)
                 
                 # Делаем pad или обрезаем до фиксированной длины
-                target_length: int = MODELS_PARAMS['FEATURE_TARGET_LENGTH']
                 if combined_features.size(2) < target_length:
                     pad: torch.Tensor = torch.zeros(1, combined_features.size(1), target_length - combined_features.size(2))
                     combined_features = torch.cat([combined_features, pad], dim=2)

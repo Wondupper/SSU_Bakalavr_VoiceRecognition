@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import os
 import sys
 from pathlib import Path
@@ -10,8 +7,10 @@ from werkzeug.datastructures import FileStorage
 project_root = Path(__file__).parents[2]
 sys.path.append(str(project_root))
 
-from backend.ml.emotions_recognition.emotions_recognitions_model import EmotionRecognitionModel
+from src.backend.ml.emotions_recognition.emotions_recognitions_model import EmotionRecognitionModel
 from src.backend.config import EMOTIONS
+
+
 
 def test_emotion_recognition_one_trained():
     """

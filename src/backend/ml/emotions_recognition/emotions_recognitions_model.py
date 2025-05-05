@@ -7,6 +7,8 @@ from src.backend.loggers.error_logger import error_logger
 from src.backend.loggers.info_logger import info_logger
 from src.backend.config import EMOTIONS, EMOTIONS_MODEL_PARAMS
 from src.backend.ml.common.features_tensors_extractor import get_features_tensors_from_audio
+from src.backend.ml.common.train import train_one_epoch
+from src.backend.ml.common.validation import calculate_batch_metrics
 
 class EmotionRecognitionNN(nn.Module):
     """
@@ -143,14 +145,6 @@ class EmotionRecognitionModel:
             bool: Успешно ли завершилось обучение
         """
         try:
-            # Проверка входных данных
-            if not audio_file or not class_name:
-                error_logger.log_error(
-                    "Пустые входные данные для обучения",
-                    self.module_name,
-                    "train"
-                )
-                return False
             
             # Проверяем, есть ли класс в словаре классов
             if class_name not in self.classes:
@@ -163,15 +157,7 @@ class EmotionRecognitionModel:
             class_idx = self.classes[class_name]
             
             # Извлекаем признаки из аудиофайлов 
-            features: List[torch.Tensor] = get_features_tensors_from_audio(audio_file)
-            
-            if not features:
-                error_logger.log_error(
-                    "Не удалось извлечь признаки из файла",
-                    self.module_name,
-                    "train"
-                )
-                return False
+            features: List[torch.Tensor] = get_features_tensors_from_audio(audio_file, EMOTIONS_MODEL_PARAMS['FEATURE_TARGET_LENGTH'])
                 
             # Создаем метки для всех фрагментов
             labels = [class_idx for _ in range(len(features))]
@@ -183,8 +169,7 @@ class EmotionRecognitionModel:
             # Создаем модель или обновляем существующую
             if self.model is None:
                 input_dim: int = X.size(2)
-                model_class = self.__class__.__orig_bases__[0].__args__[0]
-                self.model = model_class(input_dim, len(self.classes)).to(self.device)
+                self.model = EmotionRecognitionNN(input_dim, len(self.classes)).to(self.device)
             else:
                 # Расширяем выходной слой, если добавился новый класс
                 new_num_classes = len(self.classes)
@@ -201,6 +186,7 @@ class EmotionRecognitionModel:
             
             # Настройка обучения
             criterion: nn.CrossEntropyLoss = nn.CrossEntropyLoss()
+            self.model.criterion = criterion  # Добавляем criterion как атрибут модели для расчета метрик
             optimizer: optim.Adam = optim.Adam(
                 self.model.parameters(), 
                 lr=EMOTIONS_MODEL_PARAMS['LEARNING_RATE'], 
@@ -238,44 +224,27 @@ class EmotionRecognitionModel:
             # Обучение
             num_epochs: int = EMOTIONS_MODEL_PARAMS['EPOCHS']
             for epoch in range(num_epochs):
-                # Обучение
-                self.model.train()
-                train_loss: float = 0.0
-                train_correct: int = 0
+                # Обучение - выполняем одну эпоху обучения
+                train_one_epoch(
+                    self.model,
+                    train_loader,
+                    optimizer,
+                    criterion,
+                    self.device,
+                    epoch,
+                    num_epochs
+                )
                 
-                for inputs, labels in train_loader:
-                    optimizer.zero_grad()
-                    outputs = self.model(inputs)
-                    loss = criterion(outputs, labels)
-                    loss.backward()
-                    optimizer.step()
-                    
-                    train_loss += loss.item() * inputs.size(0)
-                    _, preds = torch.max(outputs, 1)
-                    train_correct += torch.sum(preds == labels.data).item()
-                
-                train_loss = train_loss / len(train_loader.dataset)
-                train_acc: float = train_correct / len(train_loader.dataset)
-                
-                # Валидация
+                # Валидация - вычисляем метрики на валидационном наборе
                 self.model.eval()
-                val_loss: float = 0.0
-                val_correct: int = 0
-                
-                with torch.no_grad():
-                    for inputs, labels in val_loader:
-                        outputs = self.model(inputs)
-                        loss = criterion(outputs, labels)
-                        
-                        val_loss += loss.item() * inputs.size(0)
-                        _, preds = torch.max(outputs, 1)
-                        val_correct += torch.sum(preds == labels.data).item()
-                
-                val_loss = val_loss / len(val_loader.dataset)
-                val_acc: float = val_correct / len(val_loader.dataset)
-                
-                # Логирование процесса обучения
-                info_logger.info(f"Эпоха {epoch+1}/{num_epochs} - train_loss: {train_loss:.4f} - train_acc: {train_acc:.4f} - val_loss: {val_loss:.4f} - val_acc: {val_acc:.4f}")
+                val_loss = calculate_batch_metrics(
+                    self.model, 
+                    val_loader, 
+                    self.device, 
+                    num_classes=len(self.classes),
+                    epoch=epoch,
+                    num_epochs=num_epochs
+                )
                 
                 # Обновление планировщика скорости обучения
                 scheduler.step(val_loss)
@@ -319,28 +288,38 @@ class EmotionRecognitionModel:
                 - 'predicted_class_index': Индекс предсказанного класса
                 - 'confidence': Уверенность предсказания
         """
-        self.model.eval()
-        
-        with torch.no_grad():
-            # Добавляем батч-размерность, если нужно
-            if len(features.shape) == 2:
-                features = features.unsqueeze(0)
-                
-            # Перенос входных данных на устройство модели
-            features = features.to(self.device)
-                
-            outputs: torch.Tensor = self.model(features)
-            probabilities: torch.Tensor = torch.nn.functional.softmax(outputs, dim=1)
+        try:
+            self.model.eval()
             
-            # Находим класс с наибольшей вероятностью
-            max_prob, predicted_class_index = torch.max(probabilities, 1)
-            confidence: float = max_prob.item()
-            predicted_class_index_int: int = predicted_class_index.item()
+            with torch.no_grad():
+                # Добавляем батч-размерность, если нужно
+                if len(features.shape) == 2:
+                    features = features.unsqueeze(0)
+                    
+                # Перенос входных данных на устройство модели
+                features = features.to(self.device)
+                    
+                outputs: torch.Tensor = self.model(features)
+                probabilities: torch.Tensor = torch.nn.functional.softmax(outputs, dim=1)
+                
+                # Находим класс с наибольшей вероятностью
+                max_prob, predicted_class_index = torch.max(probabilities, 1)
+                confidence: float = max_prob.item()
+                predicted_class_index_int: int = predicted_class_index.item()
+            
+            return {
+                "predicted_class_index": predicted_class_index_int,
+                "confidence": confidence
+            }
         
-        return {
-            "predicted_class_index": predicted_class_index_int,
-            "confidence": confidence
-        }
+        except Exception as e:
+            error_logger.log_exception(
+                e,
+                self.module_name,
+                "get_prediction_from_model",
+                "Ошибка при получении предсказаний предсказании"
+            )
+            return "unknown"
     
 
     def predict(self, audio_file: FileStorage) -> str:

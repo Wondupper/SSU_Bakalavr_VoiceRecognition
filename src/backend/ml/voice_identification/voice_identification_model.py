@@ -6,9 +6,9 @@ from werkzeug.datastructures import FileStorage
 from src.backend.loggers.error_logger import error_logger
 from src.backend.loggers.info_logger import info_logger
 from src.backend.config import VOICE_MODEL_PARAMS
-from src.backend.ml.common.features_tensors_extractor import get_features_tensors_from_audio
+from src.backend.ml.common.audio_processors.audio_to_features_main import get_features_tensors_from_audio
 from src.backend.ml.common.metrics_calculation import calculate_batch_metrics
-from backend.ml.common.train import train_one_epoch
+from src.backend.ml.common.train import train_one_epoch
 
 class VoiceIdentificationNN(nn.Module):
     """

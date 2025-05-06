@@ -1,8 +1,8 @@
 from flask import Blueprint, request, jsonify, Response
 import random
 from typing import Tuple, Any, Dict, Union, Optional, List
-from backend.ml.voice_identification.model import VoiceIdentificationModel
-from backend.ml.emotions_recognition.model import EmotionRecognitionModel
+from src.backend.ml.voice_model import VoiceIdentificationModel
+from src.backend.ml.emotions_model import EmotionRecognitionModel
 from werkzeug.datastructures import FileStorage
 from src.backend.loggers.error_logger import error_logger
 from src.backend.config import EMOTIONS
@@ -92,7 +92,6 @@ def identify() -> Response:
         
         # Напрямую идентифицируем пользователя по голосу
         identity: str = voice_id_model.predict(audio_file)
-        
         
         # Получаем распознанную эмоцию
         detected_emotion: str = emotion_model.predict(audio_file)

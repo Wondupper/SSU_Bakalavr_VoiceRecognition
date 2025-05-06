@@ -4,11 +4,12 @@ import io
 from typing import List, Optional, Tuple
 from werkzeug.datastructures import FileStorage
 from src.backend.loggers.error_logger import error_logger
+from src.backend.loggers.info_logger import info_logger
 from src.backend.config import SAMPLE_RATE, AUDIO_FRAGMENT_LENGTH
-from backend.ml.common.augmentator import apply_augmentation
+from src.backend.ml.common.augmentator import apply_augmentation
 
 
-def get_features_tensors_from_audio(audio_file: FileStorage, target_length: int) -> List[torch.Tensor]:
+def get_features_tensors_from_audio_for_training(audio_file: FileStorage, target_length: int) -> List[torch.Tensor]:
     """
     Извлекает признаки из аудиофайла с помощью torchaudio
     
@@ -59,6 +60,53 @@ def get_features_tensors_from_audio(audio_file: FileStorage, target_length: int)
     
     return features_list
 
+def get_features_tensors_from_audio_for_prediction(audio_file: FileStorage, target_length: int) -> List[torch.Tensor]:
+    """
+    Извлекает признаки из аудиофайла с помощью torchaudio для предсказания
+    
+    Args:
+        audio_file: Файл аудио (объект FileStorage Flask)
+        target_length: Целевая длина тензора признаков
+        
+    Returns:
+        Список тензоров признаков для каждого фрагмента
+    """
+    # 1. Загрузка аудио из файла
+    waveform, sample_rate = load_audio_from_file(audio_file)
+    
+    # 2. Предварительная обработка
+    waveform = preprocess_audio(waveform, sample_rate)
+    
+    # 3. Применение шумоподавления
+    enhanced_waveform = apply_noise_reduction(waveform)
+    
+    # 4. Удаление тишины
+    enhanced_waveform = remove_silence(enhanced_waveform)
+    
+    # 5. Обработка аудиоформы (без аугментации)
+    features_list = []
+    
+    # 6. Разбиение на фрагменты
+    fragments = split_into_fragments(enhanced_waveform)
+    
+    # 7. Извлечение признаков из каждого фрагмента
+    for fragment in fragments:
+        # 1. MFCC признаки
+        mfcc = extract_mfcc_features(fragment)
+
+        # 2. Дельта и дельта-дельта коэффициенты
+        delta, delta2 = compute_delta_features(mfcc)
+
+        # 3. Спектральные признаки
+        spec_features = extract_spectral_features(fragment, mfcc.shape[2])
+
+        # 4. Объединяем все признаки
+        features = combine_features(mfcc, delta, delta2, spec_features, target_length)
+        
+        features_list.append(features)
+    
+    return features_list
+
 
 def load_audio_from_file(audio_file: FileStorage) -> Tuple[torch.Tensor, int]:
     """
@@ -87,11 +135,10 @@ def load_audio_from_file(audio_file: FileStorage) -> Tuple[torch.Tensor, int]:
     except Exception as e:
         error_logger.log_exception(
             e,
-            "audio_loader",
+            "audio_to_features",
             "load_audio_from_file",
             "Ошибка при загрузке аудио из аудиофайла"
         )
-        return ()
     
 
 def preprocess_audio(waveform: torch.Tensor, original_sample_rate: int) -> torch.Tensor:
@@ -123,7 +170,7 @@ def preprocess_audio(waveform: torch.Tensor, original_sample_rate: int) -> torch
     except Exception as e:
         error_logger.log_exception(
             e,
-            "audio_processor",
+            "audio_to_features",
             "preprocess_audio",
             "Ошибка при извлечении аудиоформы"
         )
@@ -148,11 +195,10 @@ def compute_delta_features(mfcc: torch.Tensor) -> Tuple[torch.Tensor, torch.Tens
     except Exception as e:
         error_logger.log_exception(
             e,
-            "delta_features_computes",
+            "audio_to_features",
             "compute_delta_features",
             "Ошибка при вычислении дельта признаков"
         )
-        return ()
     
 
 def combine_features(mfcc: torch.Tensor, delta: torch.Tensor, delta2: torch.Tensor, 
@@ -185,11 +231,10 @@ def combine_features(mfcc: torch.Tensor, delta: torch.Tensor, delta2: torch.Tens
     except Exception as e:
         error_logger.log_exception(
             e,
-            "features_combainer",
+            "audio_to_features",
             "combine_features",
             "Ошибка при объединении признаков"
         )
-        return None
     
 
 def extract_mfcc_features(fragment: torch.Tensor) -> torch.Tensor:
@@ -214,11 +259,10 @@ def extract_mfcc_features(fragment: torch.Tensor) -> torch.Tensor:
     except Exception as e:
         error_logger.log_exception(
             e,
-            "mfcc_extractor",
+            "audio_to_features",
             "extract_mfcc_features",
             "Ошибка при выделении mfcc"
         )
-        return None
     
 
 def apply_noise_reduction(waveform: torch.Tensor) -> torch.Tensor:
@@ -266,11 +310,10 @@ def apply_noise_reduction(waveform: torch.Tensor) -> torch.Tensor:
     except Exception as e:
         error_logger.log_exception(
             e,
-            "noise_reductor",
+            "audio_to_features",
             "apply_noise_reduction",
             "Ошибка при шумоподвалении"
         )
-        return None
     
 
 def remove_silence(waveform: torch.Tensor) -> torch.Tensor:
@@ -301,11 +344,10 @@ def remove_silence(waveform: torch.Tensor) -> torch.Tensor:
     except Exception as e:
         error_logger.log_exception(
             e,
-            "silence_remover",
+            "audio_to_features",
             "remove_silence",
             "Ошибка при удалении тишины"
         )
-        return None
     
 
 def extract_spectral_features(fragment: torch.Tensor, target_time_dim: int, spectral_bands: int = 40) -> torch.Tensor:
@@ -342,11 +384,10 @@ def extract_spectral_features(fragment: torch.Tensor, target_time_dim: int, spec
     except Exception as e:
         error_logger.log_exception(
             e,
-            "spectral_features_extractor",
+            "audio_to_features",
             "extract_spectral_features",
             "Ошибка при извлечении спектральных признаков"
         )
-        return None
     
 
 def split_into_fragments(waveform: torch.Tensor) -> List[torch.Tensor]:
@@ -385,8 +426,7 @@ def split_into_fragments(waveform: torch.Tensor) -> List[torch.Tensor]:
     except Exception as e:
         error_logger.log_exception(
             e,
-            "splitter",
+            "audio_to_features",
             "split_into_fragments",
             "Ошибка при сплите"
         )
-        return None

@@ -1,6 +1,8 @@
 from flask import Flask, send_from_directory, redirect
-from backend.api.routes import api_bp
-from backend.api.error_logger import error_logger
+from src.backend.api.routes import api_bp, voice_id_model, emotion_model
+from src.backend.ml.common.data_loader import load_emotions_dataset, load_voice_dataset
+from src.backend.loggers.error_logger import error_logger
+from src.backend.loggers.info_logger import info_logger
 import os
 import logging
 
@@ -16,7 +18,7 @@ app.register_blueprint(api_bp, url_prefix='/api')
 def serve_frontend(path):
     # Главная страница
     if path == "":
-        return send_from_directory(os.path.join(basedir, 'frontend/home'), 'index.html')
+        return send_from_directory(os.path.join(basedir, 'frontend/identification'), 'index.html')
     
     # Перенаправление устаревшего пути /common.js на новый
     if path == "common.js":
@@ -27,16 +29,28 @@ def serve_frontend(path):
         directory, filename = os.path.split(path)
         return send_from_directory(os.path.join(basedir, 'frontend', directory), filename)
     
-    # Специальные разделы сайта
-    if path in ['identification', 'idtraining', 'emtraining']:
-        return send_from_directory(os.path.join(basedir, f'frontend/{path}'), 'index.html')
-    
     # Для всех остальных путей возвращаем главную страницу
-    return send_from_directory(os.path.join(basedir, 'frontend/home'), 'index.html')
+    return send_from_directory(os.path.join(basedir, 'frontend/identification'), 'index.html')
 
 @app.route('/common/<path:filename>')
 def serve_common_files(filename):
     return send_from_directory(os.path.join(basedir, 'frontend/common'), filename)
+
+def initialize_models():
+    """
+    Загружает данные и обучает модели при старте приложения
+    """
+    info_logger.info("Начало инициализации моделей")
+    
+    # Загрузка наборов данных
+    voice_dataset = load_voice_dataset()
+    emotions_dataset = load_emotions_dataset()
+    # Обучение модели идентификации голоса
+    voice_success = voice_id_model.train(voice_dataset)
+    # Обучение модели распознавания эмоций
+    emotions_success = emotion_model.train(emotions_dataset)
+    
+    return voice_success and emotions_success
 
 if __name__ == '__main__':
     # Настройка логирования для Flask
@@ -44,6 +58,15 @@ if __name__ == '__main__':
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
+    
+    # Инициализация и обучение моделей
+    models_initialized = initialize_models()
+    if not models_initialized:
+        error_logger.log_error(
+            "Не удалось инициализировать все модели. Приложение может работать некорректно.",
+            "main",
+            "server_run"
+        )
     
     # Запуск приложения
     print("Сервер готов. Для завершения нажмите Ctrl+C")

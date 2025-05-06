@@ -48,12 +48,10 @@ def add_noise(waveform: torch.Tensor) -> torch.Tensor:
     except Exception as e: 
         error_logger.log_exception(
             e,
-            "noise_adder",
+            "augmentator",
             "add_noise",
             "Ошибка при добавлении шума в аудио"
         )
-        # В случае ошибки возвращаем только оригинальное аудио
-        return [] 
     
 
 def add_reverbiration(waveform: torch.Tensor) -> torch.Tensor:
@@ -75,12 +73,10 @@ def add_reverbiration(waveform: torch.Tensor) -> torch.Tensor:
     except Exception as e: 
         error_logger.log_exception(
             e,
-            "reverberator",
+            "augmentator",
             "add_reverbiration",
             "Ошибка при добавлении ревербирации в аудио"
         )
-        # В случае ошибки возвращаем только оригинальное аудио
-        return []
 
 
 def change_speed(waveform: torch.Tensor) -> torch.Tensor:
@@ -99,12 +95,10 @@ def change_speed(waveform: torch.Tensor) -> torch.Tensor:
     except Exception as e: 
         error_logger.log_exception(
             e,
-            "speed_changer",
+            "augmentator",
             "change_speed",
             "Ошибка при изменении скорости аудио"
         )
-        # В случае ошибки возвращаем только оригинальное аудио
-        return []
     
 
 def add_masking(waveform: torch.Tensor) -> torch.Tensor:
@@ -122,9 +116,7 @@ def add_masking(waveform: torch.Tensor) -> torch.Tensor:
     except Exception as e: 
         error_logger.log_exception(
             e,
-            "time_maskiner",
+            "augmentator",
             "add_masking",
             "Ошибка при добавлении маскирования в аудио"
         )
-        # В случае ошибки возвращаем только оригинальное аудио
-        return []

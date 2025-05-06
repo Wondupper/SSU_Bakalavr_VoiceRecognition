@@ -5,9 +5,11 @@ from typing import List, Dict, Tuple, Union, Optional, Any
 from werkzeug.datastructures import FileStorage
 from src.backend.loggers.error_logger import error_logger
 from src.backend.loggers.info_logger import info_logger
-from src.backend.ml.common.audio_to_features import get_features_tensors_from_audio
+from src.backend.ml.common.audio_to_features import get_features_tensors_from_audio_for_training
+from src.backend.ml.common.audio_to_features import get_features_tensors_from_audio_for_prediction
 from src.backend.ml.common.train import train_one_epoch
 from src.backend.ml.common.validation import calculate_batch_metrics
+from src.backend.config import COMMON_MODELS_PARAMS
 
 
 class BaseMLModel:
@@ -39,17 +41,17 @@ class BaseMLModel:
         # Загружаем параметры модели
         self.features_target_length = model_params['FEATURE_TARGET_LENGTH']
         self.min_confidence = model_params['MIN_CONFIDENCE']
-        self.train_split = model_params['TRAIN_SPLIT']
-        self.early_stop_patience = model_params['EARLY_STOP_PATIENCE']
-        self.batch_size = model_params['BATCH_SIZE']
-        self.val_split = model_params['VAL_SPLIT']
-        self.epochs = model_params['EPOCHS']
-        self.patience = model_params['PATIENCE']
-        self.learning_rate = model_params['LEARNING_RATE']
-        self.weight_decay = model_params['WEIGHT_DECAY']
-        self.scheduler_factor = model_params['SCHEDULER_FACTOR']
-        self.scheduler_patience = model_params['SCHEDULER_PATIENCE']
-        self.min_lr = model_params['MIN_LR']
+        self.train_split = COMMON_MODELS_PARAMS['TRAIN_SPLIT']
+        self.early_stop_patience = COMMON_MODELS_PARAMS['EARLY_STOP_PATIENCE']
+        self.batch_size = COMMON_MODELS_PARAMS['BATCH_SIZE']
+        self.val_split = COMMON_MODELS_PARAMS['VAL_SPLIT']
+        self.epochs = COMMON_MODELS_PARAMS['EPOCHS']
+        self.patience = COMMON_MODELS_PARAMS['PATIENCE']
+        self.learning_rate = COMMON_MODELS_PARAMS['LEARNING_RATE']
+        self.weight_decay = COMMON_MODELS_PARAMS['WEIGHT_DECAY']
+        self.scheduler_factor = COMMON_MODELS_PARAMS['SCHEDULER_FACTOR']
+        self.scheduler_patience = COMMON_MODELS_PARAMS['SCHEDULER_PATIENCE']
+        self.min_lr = COMMON_MODELS_PARAMS['MIN_LR']
 
     @property
     def is_trained(self) -> bool:
@@ -75,7 +77,7 @@ class BaseMLModel:
         """
         raise NotImplementedError("Метод create_model должен быть переопределен в дочернем классе")
     
-    def train(self, dataset: Dict[str, FileStorage]) -> bool:
+    def train(self, dataset: Dict[str, FileStorage]):
         """
         Обучает модель на наборе аудиофайлов и соответствующих классов.
         
@@ -87,15 +89,6 @@ class BaseMLModel:
         """
         try:
             info_logger.info(f"{self.module_name} - Начало процесса обучения модели на наборе данных")
-            
-            # Проверяем, что набор данных не пустой
-            if not dataset:
-                error_logger.log_error(
-                    "Набор данных для обучения пуст",
-                    self.module_name,
-                    "train"
-                )
-                return False
             
             # Подготовка данных для обучения
             all_features: List[torch.Tensor] = []
@@ -116,29 +109,12 @@ class BaseMLModel:
                 file.stream.seek(0)
                 
                 # Извлекаем признаки из аудиофайла
-                features = get_features_tensors_from_audio(file, self.features_target_length)
-                
-                if not features:
-                    error_logger.log_error(
-                        f"Не удалось извлечь признаки из файла {file.filename} для класса {class_name}",
-                        self.module_name,
-                        "train"
-                    )
-                    continue
+                features = get_features_tensors_from_audio_for_training(file, self.features_target_length)
                 
                 # Добавляем признаки и метки в обучающую выборку
                 all_features.extend(features)
                 all_labels.extend([class_idx] * len(features))
-                
-                info_logger.info(f"{self.module_name} - Данные для класса {class_name} из файла {file.filename} успешно загружены")
             
-            if not all_features:
-                error_logger.log_error(
-                    "Не удалось извлечь признаки ни из одного аудиофайла",
-                    self.module_name,
-                    "train"
-                )
-                return False
             
             # Преобразуем в тензоры PyTorch
             X: torch.Tensor = torch.stack(all_features).to(self.device)
@@ -229,7 +205,6 @@ class BaseMLModel:
                             break
             
             info_logger.info(f"{self.module_name} - Обучение модели на наборе данных завершено")
-            return True
             
         except Exception as e:
             error_logger.log_exception(
@@ -238,7 +213,6 @@ class BaseMLModel:
                 "train",
                 "Ошибка при обучении модели"
             )
-            return False
     
     def get_prediction_from_model(self, features: torch.Tensor) -> Dict[str, Any]:
         """
@@ -257,19 +231,38 @@ class BaseMLModel:
             
             with torch.no_grad():
                 # Добавляем батч-размерность, если нужно
-                if len(features.shape) == 2:
+                if len(features.shape) == 1:
+                    # Если это просто вектор логитов, добавляем размерность батча
                     features = features.unsqueeze(0)
-                    
+                elif len(features.shape) == 2 and features.shape[0] == 1:
+                    # Если это уже батч из одного элемента, ничего не делаем
+                    pass
+                
                 # Перенос входных данных на устройство модели
                 features = features.to(self.device)
+                
+                # Если это уже логиты, а не входные признаки для модели
+                if features.shape[1] == len(self.classes):
+                    # Это уже логиты, применяем softmax напрямую
+                    probabilities = torch.nn.functional.softmax(features, dim=1)
+                else:
+                    # Получаем вывод модели с обработкой возможных различных форматов
+                    output = self.model(features)
                     
-                outputs: torch.Tensor = self.model(features)
-                probabilities: torch.Tensor = torch.nn.functional.softmax(outputs, dim=1)
+                    if isinstance(output, tuple):
+                        # Берем первый элемент кортежа, если это кортеж
+                        outputs = output[0]
+                    else:
+                        outputs = output
+                    
+                    # Применяем softmax
+                    probabilities = torch.nn.functional.softmax(outputs, dim=1)
+                    
                 
                 # Находим класс с наибольшей вероятностью
                 max_prob, predicted_class_index = torch.max(probabilities, 1)
-                confidence: float = max_prob.item()
-                predicted_class_index_int: int = predicted_class_index.item()
+                confidence = max_prob.item()
+                predicted_class_index_int = predicted_class_index.item()
             
             return {
                 "predicted_class_index": predicted_class_index_int,
@@ -283,25 +276,21 @@ class BaseMLModel:
                 "get_prediction_from_model",
                 "Ошибка при получении предсказаний"
             )
-            return {
-                "predicted_class_index": -1,
-                "confidence": 0.0
-            }
     
     def predict(self, audio_file: FileStorage) -> str:
         """
-        Расшиернный метод для предсказания класса из аудиофайла.
+        Метод для предсказания.
         
         Args:
             audio_file: Аудиофайл для распознавания
             
         Returns:
-            str: Предсказанный класс или "unknown", если не удалось предсказать
+            str: Предсказанное имя пользователя или "unknown", если не удалось предсказать
         """
         try:
-            features_list = get_features_tensors_from_audio(audio_file)
-            if not features_list:
-                return "unknown"
+            
+            # Получаем признаки из аудиофайла
+            features_list = get_features_tensors_from_audio_for_prediction(audio_file, self.features_target_length)
 
             # Собираем батч всех фрагментов
             X = torch.stack(features_list).to(self.device)
@@ -309,17 +298,33 @@ class BaseMLModel:
             # Базовый упрощённый алгоритм: суммируем логиты
             self.model.eval()
             with torch.no_grad():
-                outputs = self.model(X)                       # [num_fragments, num_classes]
-                summed_logits = outputs.sum(dim=0, keepdim=True)  # [1, num_classes]
-                probs = torch.softmax(summed_logits, dim=1)[0]    # [num_classes]
-                best_idx = torch.argmax(probs).item()
-                best_conf = probs[best_idx].item()
+                # Получаем выход модели
+                outputs = self.model(X)
+                
+                # Обрабатываем возможный кортеж
+                if isinstance(outputs, tuple):
+                    outputs = outputs[0]  # Берем первый элемент, если это кортеж
+                
+                info_logger.info(f"{self.module_name} - Форма выхода модели: {outputs.shape}")
+                
+                # Суммируем логиты по всем фрагментам
+                summed_logits = outputs.sum(dim=0, keepdim=True)
+                
+                # Используем get_prediction_from_model для получения предсказания
+                prediction = self.get_prediction_from_model(summed_logits)
+                predicted_class_index = prediction["predicted_class_index"]
+                confidence = prediction["confidence"]
 
-            # Если уверенность хотя бы MIN_AVG_CONFIDENCE — возвращаем класс
-            if best_conf >= self.min_confidence:
-                return self.index_to_class.get(best_idx, "unknown")
-            else:
-                return "unknown"
+                if self.module_name == 'voice_identification_model':
+                    # Если уверенность хотя бы MIN_CONFIDENCE — возвращаем класс
+                    if confidence >= self.min_confidence:
+                        return self.index_to_class.get(predicted_class_index, "unknown")
+                    else:
+                        info_logger.info(f"{self.module_name} - Недостаточная уверенность ({confidence} < {self.min_confidence})")
+                        return "unknown"
+                else:
+                    return self.index_to_class.get(predicted_class_index)
+                
 
         except Exception as e:
             error_logger.log_exception(
@@ -328,7 +333,5 @@ class BaseMLModel:
                 "predict",
                 "Ошибка при предсказании"
             )
-            return "unknown"
-
-        finally:
-            info_logger.info(f"---End extended prediction process in {self.module_name} model---")
+            # В случае ошибки возвращаем значение по умолчанию
+            return "unknown" if self.module_name == 'voice_identification_model' else self.index_to_class.get(0)

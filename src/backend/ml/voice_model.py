@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 from src.backend.config import VOICE_MODEL_PARAMS
 from src.backend.ml.common.base_model import BaseMLModel
-from werkzeug.datastructures import FileStorage
-from src.backend.ml.common.audio_to_features import get_features_tensors_from_audio_for_training
 
 class VoiceIdentificationNN(nn.Module):
     """
@@ -26,7 +24,7 @@ class VoiceIdentificationNN(nn.Module):
             nn.Conv1d(input_dim, 32, kernel_size=5, stride=1, padding=2),
             nn.LeakyReLU(0.1),
             nn.BatchNorm1d(32),
-            nn.Dropout(0.3)  # Увеличенный дропаут
+            nn.Dropout(0.3)
         )
         
         # Второй сверточный блок с Max Pooling для уменьшения размерности
@@ -35,7 +33,7 @@ class VoiceIdentificationNN(nn.Module):
             nn.LeakyReLU(0.1),
             nn.BatchNorm1d(48),
             nn.MaxPool1d(2),
-            nn.Dropout(0.4)  # Увеличенный дропаут
+            nn.Dropout(0.3)
         )
         
         # Третий сверточный блок
@@ -44,7 +42,7 @@ class VoiceIdentificationNN(nn.Module):
             nn.LeakyReLU(0.1),
             nn.BatchNorm1d(64),
             nn.MaxPool1d(2),
-            nn.Dropout(0.4)  # Увеличенный дропаут
+            nn.Dropout(0.3)
         )
         
         # Глобальный пулинг
@@ -54,7 +52,7 @@ class VoiceIdentificationNN(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(64, 32),
             nn.LeakyReLU(0.1),
-            nn.Dropout(0.5),  # Высокий дропаут для предотвращения переобучения
+            nn.Dropout(0.3 + 0.1),  # Немного увеличиваем dropout для полносвязного слоя
             nn.Linear(32, num_classes)
         )
         

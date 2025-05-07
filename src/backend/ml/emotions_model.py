@@ -2,9 +2,6 @@ import torch
 import torch.nn as nn
 from src.backend.config import EMOTIONS, EMOTIONS_MODEL_PARAMS
 from src.backend.ml.common.base_model import BaseMLModel
-from werkzeug.datastructures import FileStorage
-from src.backend.ml.common.audio_to_features import get_features_tensors_from_audio_for_training
-from src.backend.loggers.error_logger import error_logger
 
 class EmotionRecognitionNN(nn.Module):
     """
@@ -28,7 +25,7 @@ class EmotionRecognitionNN(nn.Module):
             nn.Conv1d(input_dim, 32, kernel_size=5, stride=1, padding=2),
             nn.LeakyReLU(0.1),
             nn.BatchNorm1d(32),
-            nn.Dropout(0.3)  # Увеличенный дропаут
+            nn.Dropout(0.3)
         )
         
         # Второй сверточный блок с Max Pooling для уменьшения размерности
@@ -37,7 +34,7 @@ class EmotionRecognitionNN(nn.Module):
             nn.LeakyReLU(0.1),
             nn.BatchNorm1d(64),
             nn.MaxPool1d(2),
-            nn.Dropout(0.4)  # Увеличенный дропаут
+            nn.Dropout(0.3)
         )
         
         # Третий сверточный блок - меньше фильтров, чем было раньше
@@ -46,7 +43,7 @@ class EmotionRecognitionNN(nn.Module):
             nn.LeakyReLU(0.1),
             nn.BatchNorm1d(64),
             nn.MaxPool1d(2),
-            nn.Dropout(0.4)  # Увеличенный дропаут
+            nn.Dropout(0.3)
         )
         
         # Глобальный пулинг
@@ -56,7 +53,7 @@ class EmotionRecognitionNN(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(64, 32),
             nn.LeakyReLU(0.1),
-            nn.Dropout(0.5),  # Высокий уровень дропаута для предотвращения переобучения
+            nn.Dropout(0.3 + 0.1),  # Немного увеличиваем dropout для полносвязного слоя
             nn.Linear(32, num_classes)
         )
     

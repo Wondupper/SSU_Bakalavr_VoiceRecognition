@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 from werkzeug.datastructures import FileStorage
 from src.backend.loggers.error_logger import error_logger
 from src.backend.loggers.info_logger import info_logger
-from src.backend.config import SAMPLE_RATE, AUDIO_FRAGMENT_LENGTH
+from src.backend.config import SAMPLE_RATE, AUDIO_FRAGMENT_LENGTH, IS_AUGMENTATION_ENABLED
 from src.backend.ml.common.augmentator import apply_augmentation
 
 
@@ -24,7 +24,7 @@ def get_features_tensors_from_audio_for_training(audio_file: FileStorage, target
     enhanced_waveform: torch.Tensor = preprocess(audio_file=audio_file)
     
     # 5. Применение аугментации
-    augmented_waveforms: List[torch.Tensor] = apply_augmentation(enhanced_waveform)
+    augmented_waveforms: List[torch.Tensor] = apply_augmentation(enhanced_waveform) if IS_AUGMENTATION_ENABLED else [enhanced_waveform]
     
     # 6. Обработка каждой аугментированной формы
     features_list: List[torch.Tensor] = []

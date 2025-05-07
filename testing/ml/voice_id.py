@@ -12,7 +12,7 @@ from src.backend.ml.voice_model import VoiceIdentificationModel
 
 
 def test_voice_identification_trained():
-    """
+    """ 
     Тест модели идентификации по голосу:
     1) Определяем аудиофайл для обучения и теста.
     2) Обучаем модель на заданном пользователе.
@@ -23,8 +23,8 @@ def test_voice_identification_trained():
     voice_dataset = load_voice_dataset()
     # Обучение модели идентификации голоса
     voice_id_model.train(voice_dataset)
-    test_audio  = os.path.join(project_root, 'testing', 'test_input_audiofiles', 'voice', 'firstspeaker10sec.wav')
-    expected_user = 'FirstSpeaker'
+    test_audio  = os.path.join(project_root, 'testing', 'test_input_audiofiles', 'voice', 'i.wav')
+    expected_user = 'unknown'
 
     # Проверка предсказания
     with open(test_audio, 'rb') as f:

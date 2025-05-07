@@ -52,6 +52,7 @@ class BaseMLModel:
         self.scheduler_factor = COMMON_MODELS_PARAMS['SCHEDULER_FACTOR']
         self.scheduler_patience = COMMON_MODELS_PARAMS['SCHEDULER_PATIENCE']
         self.min_lr = COMMON_MODELS_PARAMS['MIN_LR']
+        self.softmax_temperature = COMMON_MODELS_PARAMS['SOFTMAX_TEMPERATURE']
 
     @property
     def is_trained(self) -> bool:
@@ -89,6 +90,7 @@ class BaseMLModel:
         """
         try:
             info_logger.info(f"{self.module_name} - Начало процесса обучения модели на наборе данных")
+            info_logger.info(f"Классы: {dataset.keys()}")
             
             # Подготовка данных для обучения
             all_features: List[torch.Tensor] = []
@@ -114,7 +116,6 @@ class BaseMLModel:
                 # Добавляем признаки и метки в обучающую выборку
                 all_features.extend(features)
                 all_labels.extend([class_idx] * len(features))
-            
             
             # Преобразуем в тензоры PyTorch
             X: torch.Tensor = torch.stack(all_features).to(self.device)
@@ -243,8 +244,9 @@ class BaseMLModel:
                 
                 # Если это уже логиты, а не входные признаки для модели
                 if features.shape[1] == len(self.classes):
-                    # Это уже логиты, применяем softmax напрямую
-                    probabilities = torch.nn.functional.softmax(features, dim=1)
+                    # Применяем softmax с температурой
+                    logits = features / self.softmax_temperature
+                    probabilities = torch.nn.functional.softmax(logits, dim=1)
                 else:
                     # Получаем вывод модели с обработкой возможных различных форматов
                     output = self.model(features)
@@ -255,9 +257,19 @@ class BaseMLModel:
                     else:
                         outputs = output
                     
-                    # Применяем softmax
+                    # Применяем softmax с температурой
+                    outputs = outputs / self.softmax_temperature
                     probabilities = torch.nn.functional.softmax(outputs, dim=1)
-                    
+                
+                # Форматируем вывод вероятностей для более читаемого вида
+                prob_dict = {}
+                for idx in range(probabilities.size(1)):
+                    class_name = self.index_to_class.get(idx, f"Неизвестный класс {idx}")
+                    prob_value = probabilities[0, idx].item()  # Берем первый элемент батча
+                    prob_dict[class_name] = f"{prob_value:.6f}"
+                
+                # Логируем форматированные вероятности
+                info_logger.info(f"Вероятности классов: {prob_dict}")
                 
                 # Находим класс с наибольшей вероятностью
                 max_prob, predicted_class_index = torch.max(probabilities, 1)
@@ -276,6 +288,7 @@ class BaseMLModel:
                 "get_prediction_from_model",
                 "Ошибка при получении предсказаний"
             )
+            return {}
     
     def predict(self, audio_file: FileStorage) -> str:
         """
@@ -305,8 +318,6 @@ class BaseMLModel:
                 if isinstance(outputs, tuple):
                     outputs = outputs[0]  # Берем первый элемент, если это кортеж
                 
-                info_logger.info(f"{self.module_name} - Форма выхода модели: {outputs.shape}")
-                
                 # Суммируем логиты по всем фрагментам
                 summed_logits = outputs.sum(dim=0, keepdim=True)
                 
@@ -320,7 +331,6 @@ class BaseMLModel:
                     if confidence >= self.min_confidence:
                         return self.index_to_class.get(predicted_class_index, "unknown")
                     else:
-                        info_logger.info(f"{self.module_name} - Недостаточная уверенность ({confidence} < {self.min_confidence})")
                         return "unknown"
                 else:
                     return self.index_to_class.get(predicted_class_index)
@@ -333,5 +343,5 @@ class BaseMLModel:
                 "predict",
                 "Ошибка при предсказании"
             )
-            # В случае ошибки возвращаем значение по умолчанию
-            return "unknown" if self.module_name == 'voice_identification_model' else self.index_to_class.get(0)
+            # В случае ошибки возвращаем пустую строку
+            return ""

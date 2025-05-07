@@ -69,7 +69,7 @@ def calculate_metrics(
             "calculate_metrics"
         )
         # Возвращаем базовый словарь с нулевыми метриками
-        return {'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0}
+        return {}
 
 def log_metrics(metrics: Dict[str, float], epoch: int, num_epochs: int, process_type: str):
     try:

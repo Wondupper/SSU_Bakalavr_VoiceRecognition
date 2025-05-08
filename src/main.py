@@ -1,13 +1,14 @@
 from flask import Flask, send_from_directory, redirect
-from src.backend.api.routes import api_bp, voice_id_model, emotion_model
-from src.backend.ml.common.data_loader import load_emotions_dataset, load_voice_dataset
-from src.backend.loggers.error_logger import error_logger
-from src.backend.loggers.info_logger import info_logger
 import os
 import logging
 
 # Абсолютный путь к директории src
 basedir = os.path.abspath(os.path.dirname(__file__))
+
+from backend.api.routes import api_bp, voice_id_model, emotion_model
+from backend.ml.common.data_loader import load_emotions_dataset, load_voice_dataset
+from backend.loggers.error_logger import error_logger
+from backend.loggers.info_logger import info_logger
 
 app = Flask(__name__, static_folder=None)  # Убираем стандартную папку static
 app.register_blueprint(api_bp, url_prefix='/api')

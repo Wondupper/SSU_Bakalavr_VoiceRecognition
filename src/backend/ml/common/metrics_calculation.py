@@ -3,8 +3,8 @@ import numpy as np
 import torch
 from sklearn.metrics import accuracy_score, precision_score, recall_score, roc_auc_score
 from sklearn.preprocessing import OneHotEncoder
-from src.backend.loggers.error_logger import error_logger
-from src.backend.loggers.info_logger import info_logger
+from backend.loggers.error_logger import error_logger
+from backend.loggers.info_logger import info_logger
 
 def calculate_metrics(
     y_true: Union[torch.Tensor, np.ndarray], 

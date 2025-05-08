@@ -2,8 +2,8 @@ import os
 import io
 from typing import Dict, List, Tuple, Any, Optional
 from werkzeug.datastructures import FileStorage
-from src.backend.config import DATA_EMOTIONS, DATA_VOICE
-from src.backend.loggers.error_logger import error_logger
+from backend.config import DATA_EMOTIONS, DATA_VOICE
+from backend.loggers.error_logger import error_logger
 
 def load_emotions_dataset() -> Dict[str, FileStorage]:
     """

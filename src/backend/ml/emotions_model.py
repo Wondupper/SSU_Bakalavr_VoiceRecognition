@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from src.backend.config import EMOTIONS, EMOTIONS_MODEL_PARAMS
-from src.backend.ml.common.base_model import BaseMLModel
+from backend.config import EMOTIONS, EMOTIONS_MODEL_PARAMS
+from backend.ml.common.base_model import BaseMLModel
 
 class SqueezeExcitationBlock(nn.Module):
     """

@@ -3,13 +3,13 @@ import torch.nn as nn
 import torch.optim as optim
 from typing import List, Dict, Tuple, Union, Optional, Any
 from werkzeug.datastructures import FileStorage
-from src.backend.loggers.error_logger import error_logger
-from src.backend.loggers.info_logger import info_logger
-from src.backend.ml.common.audio_to_features import get_features_tensors_from_audio_for_training
-from src.backend.ml.common.audio_to_features import get_features_tensors_from_audio_for_prediction
-from src.backend.ml.common.train import train_one_epoch
-from src.backend.ml.common.validation import calculate_batch_metrics
-from src.backend.config import COMMON_MODELS_PARAMS
+from backend.loggers.error_logger import error_logger
+from backend.loggers.info_logger import info_logger
+from backend.ml.common.audio_to_features import get_features_tensors_from_audio_for_training
+from backend.ml.common.audio_to_features import get_features_tensors_from_audio_for_prediction
+from backend.ml.common.train import train_one_epoch
+from backend.ml.common.validation import calculate_batch_metrics
+from backend.config import COMMON_MODELS_PARAMS
 
 
 class BaseMLModel:
@@ -78,7 +78,7 @@ class BaseMLModel:
         """
         raise NotImplementedError("Метод create_model должен быть переопределен в дочернем классе")
     
-    def train(self, dataset: Dict[str, FileStorage]):
+    def train(self, dataset: Dict[str, FileStorage]) -> bool:
         """
         Обучает модель на наборе аудиофайлов и соответствующих классов.
         
@@ -206,6 +206,8 @@ class BaseMLModel:
                             break
             
             info_logger.info(f"{self.module_name} - Обучение модели на наборе данных завершено")
+
+            return True
             
         except Exception as e:
             error_logger.log_exception(
@@ -214,6 +216,7 @@ class BaseMLModel:
                 "train",
                 "Ошибка при обучении модели"
             )
+            return False
     
     def get_prediction_from_model(self, features: torch.Tensor) -> Dict[str, Any]:
         """

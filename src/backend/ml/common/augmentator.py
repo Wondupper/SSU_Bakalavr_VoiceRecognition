@@ -2,8 +2,8 @@ import torch
 import torchaudio
 import random
 from typing import List
-from src.backend.loggers.error_logger import error_logger
-from src.backend.config import SAMPLE_RATE, AUGMENTATION
+from backend.loggers.error_logger import error_logger
+from backend.config import SAMPLE_RATE, AUGMENTATION
 
 def apply_augmentation(waveform: torch.Tensor) -> List[torch.Tensor]:
     """

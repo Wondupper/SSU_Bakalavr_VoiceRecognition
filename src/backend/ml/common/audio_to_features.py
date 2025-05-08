@@ -3,10 +3,10 @@ import torchaudio
 import io
 from typing import List, Optional, Tuple
 from werkzeug.datastructures import FileStorage
-from src.backend.loggers.error_logger import error_logger
-from src.backend.loggers.info_logger import info_logger
-from src.backend.config import SAMPLE_RATE, AUDIO_FRAGMENT_LENGTH, IS_AUGMENTATION_ENABLED
-from src.backend.ml.common.augmentator import apply_augmentation
+from backend.loggers.error_logger import error_logger
+from backend.loggers.info_logger import info_logger
+from backend.config import SAMPLE_RATE, AUDIO_FRAGMENT_LENGTH, IS_AUGMENTATION_ENABLED
+from backend.ml.common.augmentator import apply_augmentation
 
 
 def get_features_tensors_from_audio_for_training(audio_file: FileStorage, target_length: int) -> List[torch.Tensor]:

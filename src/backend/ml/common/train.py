@@ -1,8 +1,8 @@
 from typing import Dict
 import numpy as np
 import torch
-from src.backend.ml.common.metrics_calculation import calculate_metrics, log_metrics
-from src.backend.loggers.error_logger import error_logger
+from backend.ml.common.metrics_calculation import calculate_metrics, log_metrics
+from backend.loggers.error_logger import error_logger
 
 def train_one_epoch(
     model: torch.nn.Module,

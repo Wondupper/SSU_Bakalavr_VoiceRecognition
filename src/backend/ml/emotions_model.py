@@ -29,8 +29,6 @@ class SqueezeExcitationBlock(nn.Module):
 class EmotionRecognitionNN(nn.Module):
     """
     Нейронная сеть для распознавания эмоций в речи на основе PyTorch.
-    Архитектура оптимизирована для предотвращения переобучения на малых наборах данных,
-    но при этом достаточно мощная для хорошего разделения классов эмоций.
     """
     def __init__(self, input_dim: int, num_classes: int) -> None:
         """
@@ -48,7 +46,7 @@ class EmotionRecognitionNN(nn.Module):
             nn.Conv1d(input_dim, 32, kernel_size=5, stride=1, padding=2),
             nn.LeakyReLU(0.1),
             nn.BatchNorm1d(32),
-            nn.Dropout(0.5)  # Уменьшаем dropout для первого слоя
+            nn.Dropout(0.5)
         )
         
         # Второй сверточный блок с dilation
@@ -81,7 +79,7 @@ class EmotionRecognitionNN(nn.Module):
         # Глобальный пулинг
         self.global_pool = nn.AdaptiveAvgPool1d(1)
         
-        # Полносвязные слои - сохраняем размерность 72 -> 32 -> num_classes
+        # Полносвязные слои
         self.fc = nn.Sequential(
             nn.Linear(72, 32),
             nn.LeakyReLU(0.1),
@@ -145,7 +143,7 @@ class EmotionRecognitionModel(BaseMLModel):
     
     def __init__(self) -> None:
         """
-        Инициализирует модель для распознавания эмоций в речи.
+        Инициализация модели для распознавания эмоций в речи.
         """
         super().__init__("emotions_recognitions_model", EMOTIONS_MODEL_PARAMS)
         
@@ -156,7 +154,7 @@ class EmotionRecognitionModel(BaseMLModel):
         
     def create_model(self, input_dim: int, num_classes: int) -> nn.Module:
         """
-        Создает модель нейронной сети для распознавания эмоций.
+        Создание модели нейронной сети для распознавания эмоций.
         
         Args:
             input_dim: Размерность входных данных

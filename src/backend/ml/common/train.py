@@ -14,7 +14,7 @@ def train_one_epoch(
     num_epochs: int
 ) -> Dict[str, float]:
     """
-    Выполняет одну эпоху обучения модели.
+    Выполнение одной эпохи обучения модели.
     
     Args:
         model: Модель PyTorch

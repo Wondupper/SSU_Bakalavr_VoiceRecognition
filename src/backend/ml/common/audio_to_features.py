@@ -1,32 +1,31 @@
 import torch
 import torchaudio
 import io
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 from werkzeug.datastructures import FileStorage
 from backend.loggers.error_logger import error_logger
-from backend.loggers.info_logger import info_logger
 from backend.config import SAMPLE_RATE, AUDIO_FRAGMENT_LENGTH, IS_AUGMENTATION_ENABLED
 from backend.ml.common.augmentator import apply_augmentation
 
 
 def get_features_tensors_from_audio_for_training(audio_file: FileStorage, target_length: int) -> List[torch.Tensor]:
     """
-    Извлекает признаки из аудиофайла с помощью torchaudio
+    Главный метод для извлечения признаков из аудиофайла для обучения моделей
     
     Args:
-        audio_file: Файл аудио (объект FileStorage Flask)
+        audio_file: Файл аудио
         target_length: Целевая длина тензора признаков
         
     Returns:
         Список тензоров признаков для каждого фрагмента
     """
-    
+
     enhanced_waveform: torch.Tensor = preprocess(audio_file=audio_file)
     
-    # 5. Применение аугментации
+    # Применение аугментации
     augmented_waveforms: List[torch.Tensor] = apply_augmentation(enhanced_waveform) if IS_AUGMENTATION_ENABLED else [enhanced_waveform]
     
-    # 6. Обработка каждой аугментированной формы
+    # Обработка каждой аугментированной формы
     features_list: List[torch.Tensor] = []
     for aug_waveform in augmented_waveforms:
         features_list.extend(extract(aug_waveform, target_length)) 
@@ -35,10 +34,10 @@ def get_features_tensors_from_audio_for_training(audio_file: FileStorage, target
 
 def get_features_tensors_from_audio_for_prediction(audio_file: FileStorage, target_length: int) -> List[torch.Tensor]:
     """
-    Извлекает признаки из аудиофайла с помощью torchaudio для предсказания
+    Главный метод для извлечения признаков из аудиофайла с помощью для предсказания
     
     Args:
-        audio_file: Файл аудио (объект FileStorage Flask)
+        audio_file: Файл аудио
         target_length: Целевая длина тензора признаков
         
     Returns:
@@ -47,71 +46,83 @@ def get_features_tensors_from_audio_for_prediction(audio_file: FileStorage, targ
     
     enhanced_waveform: torch.Tensor = preprocess(audio_file=audio_file)
     
-    # 5. Обработка аудиоформы (без аугментации)
+    # Обработка аудиоформы
     features_list: List[torch.Tensor] = extract(enhanced_waveform, target_length)
     
     return features_list
 
 
 def preprocess(audio_file: FileStorage) -> torch.Tensor:
-    # 1. Загрузка аудио из файла
+    """
+    Набор последовательно выполняемых методов для предобработки аудиофайла
+    
+    Args:
+        audio_file: Файл аудио
+
+    Returns:
+        Тензор признаков аудиофайла
+    """
+
+    # Загрузка аудио из файла
     waveform, sample_rate = load_audio_from_file(audio_file)
     
-    # 2. Предварительная обработка
+    # Предварительная обработка
     waveform: torch.Tensor = preprocess_audio(waveform, sample_rate)
     
-    # 3. Применение шумоподавления
+    # Применение шумоподавления
     enhanced_waveform: torch.Tensor = apply_noise_reduction(waveform)
     
-    # 4. Удаление тишины
+    # Удаление тишины
     enhanced_waveform: torch.Tensor = remove_silence(enhanced_waveform)
 
     return enhanced_waveform
 
 
 def extract(waveform: torch.Tensor, target_length: int) -> List[torch.Tensor]:
-    try:
-        features_list: List[torch.Tensor] = []
+    """
+    Набор последовательно выполняемых методов для извлечения признаков из аудиофайла
+    
+    Args:
+        waveform: Аудиоволна
+        target_length: Целевая длина тензора признаков
         
-        # 6. Разбиение на фрагменты
-        fragments: List[torch.Tensor] = split_into_fragments(waveform)
+    Returns:
+        Список тензоров признаков аудиофайла
+    """
+
+    features_list: List[torch.Tensor] = []
+    
+    # Разбиение на фрагменты
+    fragments: List[torch.Tensor] = split_into_fragments(waveform)
+    
+    # Извлечение признаков из каждого фрагмента
+    for fragment in fragments:
+        # MFCC признаки
+        mfcc: torch.Tensor = extract_mfcc_features(fragment)
+
+        # Дельта и дельта-дельта коэффициенты
+        delta: torch.Tensor
+        delta2: torch.Tensor
+        delta, delta2 = compute_delta_features(mfcc)
+
+        # Спектральные признаки
+        spec_features: torch.Tensor = extract_spectral_features(fragment, mfcc.shape[2])
+
+        # Объединение всех признаков
+        features: torch.Tensor = combine_features(mfcc, delta, delta2, spec_features, target_length)
         
-        # 7. Извлечение признаков из каждого фрагмента
-        for fragment in fragments:
-            # 1. MFCC признаки
-            mfcc: torch.Tensor = extract_mfcc_features(fragment)
+        features_list.append(features)
+    
+    return features_list
 
-            # 2. Дельта и дельта-дельта коэффициенты
-            delta: torch.Tensor
-            delta2: torch.Tensor
-            delta, delta2 = compute_delta_features(mfcc)
-
-            # 3. Спектральные признаки
-            spec_features: torch.Tensor = extract_spectral_features(fragment, mfcc.shape[2])
-
-            # 4. Объединяем все признаки
-            features: torch.Tensor = combine_features(mfcc, delta, delta2, spec_features, target_length)
-            
-            features_list.append(features)
-        
-        return features_list
-
-    except Exception as e:
-        error_logger.log_exception(
-            e,
-            "audio_to_features",
-            "extract",
-            "Ошибка при исполнении последовательности в процессе извлечения признаков"
-        )
-        return []
 
 
 def load_audio_from_file(audio_file: FileStorage) -> Tuple[torch.Tensor, int]:
     """
-    Загружает аудио из файла и возвращает wavform и sample_rate
+    Загрузка аудио из файла
     
     Args:
-        audio_file: Файл аудио (объект FileStorage Flask)
+        audio_file: Файл аудио
     
     Returns:
         Tuple с waveform и sample_rate
@@ -142,7 +153,7 @@ def load_audio_from_file(audio_file: FileStorage) -> Tuple[torch.Tensor, int]:
 
 def preprocess_audio(waveform: torch.Tensor, original_sample_rate: int) -> torch.Tensor:
     """
-    Выполняет предварительную обработку аудио: ресемплинг, преобразование в моно, нормализация
+    Выполнение предварительной обработки аудио: ресемплинг, преобразование в моно, нормализация
     
     Args:
         waveform: Тензор аудиоформы
@@ -179,7 +190,7 @@ def preprocess_audio(waveform: torch.Tensor, original_sample_rate: int) -> torch
         
 def compute_delta_features(mfcc: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Вычисляет дельта и дельта-дельта коэффициенты
+    Вычисление дельта и дельта-дельта коэффициентов
     
     Args:
         mfcc: Тензор MFCC признаков
@@ -205,7 +216,7 @@ def compute_delta_features(mfcc: torch.Tensor) -> Tuple[torch.Tensor, torch.Tens
 def combine_features(mfcc: torch.Tensor, delta: torch.Tensor, delta2: torch.Tensor, 
                      spec_features: torch.Tensor, target_length: int) -> torch.Tensor:
     """
-    Объединяет все признаки и приводит их к заданной длине
+    Объединение всех признаков и приведение их к заданной длине
     
     Args:
         mfcc: Тензор MFCC признаков
@@ -241,7 +252,7 @@ def combine_features(mfcc: torch.Tensor, delta: torch.Tensor, delta2: torch.Tens
 
 def extract_mfcc_features(fragment: torch.Tensor) -> torch.Tensor:
     """
-    Извлекает MFCC признаки из фрагмента аудио
+    Извлечение MFCC признаков из фрагмента аудио
     
     Args:
         fragment: Фрагмент аудиоформы
@@ -270,7 +281,7 @@ def extract_mfcc_features(fragment: torch.Tensor) -> torch.Tensor:
 
 def apply_noise_reduction(waveform: torch.Tensor) -> torch.Tensor:
     """
-    Применяет шумоподавление к аудиоформе
+    Применение шумоподавления к аудиоформе
     
     Args:
         waveform: Тензор аудиоформы
@@ -322,7 +333,7 @@ def apply_noise_reduction(waveform: torch.Tensor) -> torch.Tensor:
 
 def remove_silence(waveform: torch.Tensor) -> torch.Tensor:
     """
-    Удаляет тишину из аудиоформы
+    Удаление тишины из аудиоформы
     
     Args:
         waveform: Тензор аудиоформы
@@ -357,7 +368,7 @@ def remove_silence(waveform: torch.Tensor) -> torch.Tensor:
 
 def extract_spectral_features(fragment: torch.Tensor, target_time_dim: int, spectral_bands: int = 40) -> torch.Tensor:
     """
-    Извлекает спектральные признаки из фрагмента аудио
+    Извлечение спектральных признаков из фрагмента аудио
     
     Args:
         fragment: Фрагмент аудиоформы
@@ -398,7 +409,7 @@ def extract_spectral_features(fragment: torch.Tensor, target_time_dim: int, spec
 
 def split_into_fragments(waveform: torch.Tensor) -> List[torch.Tensor]:
     """
-    Разбивает аудиоформу на фрагменты с перекрытием
+    Разбиение аудиоформы на фрагменты с перекрытием
     
     Args:
         waveform: Тензор аудиоформы

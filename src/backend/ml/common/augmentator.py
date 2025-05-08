@@ -7,14 +7,13 @@ from backend.config import SAMPLE_RATE, AUGMENTATION
 
 def apply_augmentation(waveform: torch.Tensor) -> List[torch.Tensor]:
     """
-    Применяет аугментацию к аудиофайлу для расширения обучающей выборки.
+    Применение аугментации к аудиоволне для расширения обучающей выборки
     
     Args:
         waveform: Тензор аудио [channels, time]
-        module_name: Имя модуля для логирования
         
     Returns:
-        Список аугментированных аудиофайлов
+        Список аугментированных аудиоволн
     """
     final_waveforms: List[torch.Tensor] = [waveform]  # Добавляем оригинальное аудио
     
@@ -27,9 +26,18 @@ def apply_augmentation(waveform: torch.Tensor) -> List[torch.Tensor]:
 
 
 def add_noise(waveform: torch.Tensor) -> torch.Tensor:
+    """
+    Добавление шума
+    
+    Args:
+        waveform: Тензор аудио [channels, time]
+        
+    Returns:
+        Аудиоволна с шумом
+    """
     try:
         new_augmented_waveforms: List[torch.Tensor] = []
-        # 5. Добавление шума
+        # Добавление шума
         for snr_db in AUGMENTATION['SNR_DBS']:
             noise: torch.Tensor = torch.randn_like(waveform)
             # Рассчитываем энергию сигнала и шума
@@ -55,9 +63,18 @@ def add_noise(waveform: torch.Tensor) -> torch.Tensor:
     
 
 def add_reverbiration(waveform: torch.Tensor) -> torch.Tensor:
+    """
+    Добавление ревербирации(эхо)
+    
+    Args:
+        waveform: Тензор аудио [channels, time]
+        
+    Returns:
+        Аудиоволна с ревербирацией(эхом)
+    """
     try:
         new_augmented_waveforms: List[torch.Tensor] = []
-        # 3. Реверберация (добавление эхо)
+        # Реверберация (добавление эхо)
         for decay in AUGMENTATION['DECAYS']:
             reverb_waveform: torch.Tensor = waveform.clone()
             # Создаем простую реверберацию, добавляя задержанную и затухающую копию сигнала
@@ -80,6 +97,15 @@ def add_reverbiration(waveform: torch.Tensor) -> torch.Tensor:
 
 
 def change_speed(waveform: torch.Tensor) -> torch.Tensor:
+    """
+    Изменение скорости аудио
+    
+    Args:
+        waveform: Тензор аудио [channels, time]
+        
+    Returns:
+        Аудиоволна с измененной скоростью
+    """
     try:
         new_augmented_waveforms: List[torch.Tensor] = []
         for speed in AUGMENTATION['SPEEDS']:
@@ -102,9 +128,18 @@ def change_speed(waveform: torch.Tensor) -> torch.Tensor:
     
 
 def add_masking(waveform: torch.Tensor) -> torch.Tensor:
+    """
+    Добавление маскирования
+    
+    Args:
+        waveform: Тензор аудио [channels, time]
+        
+    Returns:
+        Аудиоволна с маскированием
+    """
     try:
         new_augmented_waveforms: List[torch.Tensor] = []
-        # 4. Маскирование по времени (Time Masking)
+        # Маскирование по времени (Time Masking)
         for mask_param in AUGMENTATION['MASK_PARAMS']:
             mask_waveform: torch.Tensor = waveform.clone()
             time_mask_samples: int = int(mask_param * waveform.size(1))

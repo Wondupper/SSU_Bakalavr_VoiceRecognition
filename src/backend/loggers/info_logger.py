@@ -8,7 +8,7 @@ class InfoLogger:
     
     def log_info(self, info_message, module=None):
         """
-        Записывает информационное сообщение в консоль
+        Запись информационного сообщения в консоль
         
         Args:
             info_message: Информационный текст

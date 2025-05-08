@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, Response
 import random
-from typing import Tuple, Any, Dict, Union, Optional, List
+from typing import Tuple, Any, Optional
 from backend.ml.voice_model import VoiceIdentificationModel
 from backend.ml.emotions_model import EmotionRecognitionModel
 from werkzeug.datastructures import FileStorage
@@ -38,7 +38,7 @@ def handle_error(error: Any, module: str = "api", location: str = "general", sta
 
 api_bp: Blueprint = Blueprint('api', __name__)
 
-# Выводим эмоцию дня для информации
+# Выводим эмоцию дня в консоль для информации
 print(f"Эмоция дня установлена: {DAILY_EMOTION}")
 
 
@@ -142,7 +142,7 @@ def identify() -> Response:
 @api_bp.route('/daily_emotion', methods=['GET'])
 def get_daily_emotion_endpoint() -> Tuple[Response, int]:
     """
-    Возвращает эмоцию дня, которая остается постоянной до перезапуска сервера
+    Возврат эмоции дня, которая остается постоянной до перезапуска сервера
     """
     return jsonify({'emotion': DAILY_EMOTION}), 200
 

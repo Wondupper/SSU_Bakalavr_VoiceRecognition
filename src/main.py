@@ -72,7 +72,7 @@ if __name__ == '__main__':
     # Запуск приложения
     print("Сервер готов. Для завершения нажмите Ctrl+C")
     try:
-        # Запускаем сервер
+        # Запуск сервер
         app.run(debug=False, host='0.0.0.0', port=5000)
     except KeyboardInterrupt:
         print("\nПолучен сигнал завершения.")

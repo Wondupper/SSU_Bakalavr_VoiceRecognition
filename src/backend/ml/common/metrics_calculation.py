@@ -15,7 +15,7 @@ def calculate_metrics(
     class_names: Optional[List[str]] = None
 ) -> Dict[str, Union[float, Dict[str, float]]]:
     """
-    Рассчитывает метрики классификации: accuracy, precision, recall, auc-roc.
+    Рассчет метрик классификации: accuracy, precision, recall, auc-roc.
     
     Args:
         y_true: Истинные метки классов (может быть тензором PyTorch или массивом NumPy)
@@ -59,7 +59,7 @@ def calculate_metrics(
     
 def log_metrics(metrics: Dict[str, Union[float, Dict[str, float]]], epoch: int, num_epochs: int, process_type: str):
     """
-    Логирует все метрики (глобальные и по классам).
+    Логирование всех метрик (глобальные и по классам).
     
     Args:
         metrics: Словарь с метриками
@@ -85,7 +85,7 @@ def calculate_macro_metrics(
     average: str = 'macro'
 ) -> Dict[str, float]:
     """
-    Рассчитывает глобальные метрики классификации: accuracy, precision, recall, auc-roc.
+    Рассчет глобальных метрик классификации: accuracy, precision, recall, auc-roc.
     
     Args:
         y_true: Истинные метки классов (может быть тензором PyTorch или массивом NumPy)
@@ -142,7 +142,7 @@ def calculate_micro_metrics(
     class_names: Optional[List[str]] = None
 ) -> Dict[str, Dict[str, float]]:
     """
-    Рассчитывает метрики классификации для каждого класса отдельно.
+    Рассчет метрик классификации для каждого класса отдельно.
     
     Args:
         y_true: Истинные метки классов (может быть тензором PyTorch или массивом NumPy)
@@ -201,7 +201,7 @@ def calculate_micro_metrics(
 
 def log_macro_metrics(metrics: Dict[str, Union[float, Dict[str, float]]], epoch: int, num_epochs: int, process_type: str):
     """
-    Логирует глобальные метрики обучения или валидации.
+    Логирование глобальных метрик обучения или валидации.
     
     Args:
         metrics: Словарь с метриками
@@ -229,7 +229,7 @@ def log_macro_metrics(metrics: Dict[str, Union[float, Dict[str, float]]], epoch:
 
 def log_micro_metrics(metrics: Dict[str, Union[float, Dict[str, float]]], epoch: int, num_epochs: int, process_type: str):
     """
-    Логирует метрики для каждого класса.
+    Логирование метрик для каждого класса.
     
     Args:
         metrics: Словарь с метриками, включая 'per_class'

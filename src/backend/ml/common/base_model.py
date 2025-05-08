@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from typing import List, Dict, Tuple, Union, Optional, Any
+from typing import List, Dict, Any
 from werkzeug.datastructures import FileStorage
 from backend.loggers.error_logger import error_logger
 from backend.loggers.info_logger import info_logger
@@ -14,22 +14,36 @@ from backend.config import COMMON_MODELS_PARAMS
 
 class BaseMLModel:
     """
-    Базовая модель машинного обучения для распознавания речи.
+    Базовая модель машинного обучения с общими методами и характеристиками.
     
     Атрибуты:
         model: Модель PyTorch
         classes: Словарь классов и соответствующих им индексов
         index_to_class: Словарь индексов и соответствующих им классов
         device: Устройство для обучения модели (CPU/GPU)
+        features_target_length : Целевая длина тензора признаков
+        min_confide : Минимальная уверенность для предсказания
+        train_split : Доля тренировочной выборки
+        early_stop_patience : Условие ранней остановки
+        batch_size : Размер батчей
+        val_split : Доля валиадционной выборки
+        epochs : Количество эпох
+        patienc : Терпимость, сколько эпох ждать для улучшения обучения
+        learning_rate : Начальная скорость обучения
+        weight_decay : Параметр L2 регуляризации
+        scheduler_factor : Коэффициент для планировщика скорости обучения
+        scheduler_patience : Терпение для планировщика скорости обучения
+        min_lr : Нижняя граница скорости обучения для планировщика
+        softmax_temperature : Температура softmax для более мягких вероятностей
     """
     
     def __init__(self, module_name: str, model_params: Dict[str, Any]) -> None:
         """
-        Инициализирует базовую модель машинного обучения.
+        Инициализация.
         
         Args:
             module_name: Имя модуля для логирования
-            model_params: Параметры модели
+            model_params: Параметры модели, индивидуальные для наследников
         """
         # Инициализируем атрибуты
         self.module_name = module_name
@@ -57,7 +71,7 @@ class BaseMLModel:
     @property
     def is_trained(self) -> bool:
         """
-        Проверяет, обучена ли модель
+        Проверка, обучена ли модель
         
         Returns:
             bool: True, если модель обучена, иначе False
@@ -66,7 +80,7 @@ class BaseMLModel:
     
     def create_model(self, input_dim: int, num_classes: int) -> nn.Module:
         """
-        Создает модель нейронной сети.
+        Создание модели нейронной сети.
         Должен быть переопределен в дочерних классах.
         
         Args:
@@ -80,7 +94,7 @@ class BaseMLModel:
     
     def train(self, dataset: Dict[str, FileStorage]) -> bool:
         """
-        Обучает модель на наборе аудиофайлов и соответствующих классов.
+        Обучение модели на наборе аудиофайлов и соответствующих классах.
         
         Args:
             dataset: Словарь, где ключи - это классы, а значения - аудиофайлы
@@ -220,7 +234,7 @@ class BaseMLModel:
     
     def get_prediction_from_model(self, features: torch.Tensor) -> Dict[str, Any]:
         """
-        Получает предсказание от модели для заданных признаков.
+        Получение предсказаний от модели для заданных признаков.
         
         Args:
             features: Тензор признаков

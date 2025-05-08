@@ -28,9 +28,7 @@ class SqueezeExcitationBlock(nn.Module):
 
 class VoiceIdentificationNN(nn.Module):
     """
-    Нейронная сеть для идентификации голоса на основе PyTorch.
-    Архитектура оптимизирована для предотвращения переобучения на малых наборах данных,
-    но при этом достаточно мощная для хорошего разделения классов.
+    Нейронная сеть для идентификации имени по голосу на основе PyTorch.
     """
     def __init__(self, input_dim: int, num_classes: int) -> None:
         """
@@ -59,7 +57,7 @@ class VoiceIdentificationNN(nn.Module):
             nn.Dropout(0.5)
         )
         
-        # Третий сверточный блок с уменьшенным числом фильтров, чтобы сохранить 56 каналов
+        # Третий сверточный блок
         self.conv3 = nn.Sequential(
             nn.Conv1d(48, 56, kernel_size=3, stride=1, padding=1),
             nn.LeakyReLU(0.1),
@@ -80,7 +78,7 @@ class VoiceIdentificationNN(nn.Module):
         # Глобальный пулинг
         self.global_pool = nn.AdaptiveAvgPool1d(1)
         
-        # Полносвязные слои с residual connection - сохраняем размерность 56 -> 32 -> num_classes
+        # Полносвязные слои
         self.fc = nn.Sequential(
             nn.Linear(56, 32),
             nn.LeakyReLU(0.1),
@@ -143,13 +141,13 @@ class VoiceIdentificationModel(BaseMLModel):
     
     def __init__(self) -> None:
         """
-        Инициализирует модель для идентификации по голосу.
+        Инициализация модели для идентификации по голосу.
         """
         super().__init__("voice_identification_model", VOICE_MODEL_PARAMS)
         
     def create_model(self, input_dim: int, num_classes: int) -> nn.Module:
         """
-        Создает модель нейронной сети для идентификации по голосу.
+        Создание модели нейронной сети для идентификации по голосу.
         
         Args:
             input_dim: Размерность входных данных

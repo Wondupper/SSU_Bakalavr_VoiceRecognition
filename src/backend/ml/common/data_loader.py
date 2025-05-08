@@ -7,7 +7,7 @@ from backend.loggers.error_logger import error_logger
 
 def load_emotions_dataset() -> Dict[str, FileStorage]:
     """
-    Загружает набор данных для обучения модели распознавания эмоций из конфигурации.
+    Загрузка набора данных для обучения модели распознавания эмоций из конфигурации.
     
     Returns:
         Dict[str, FileStorage]: Словарь, где ключи - это эмоции, а значения аудиофайлы
@@ -47,7 +47,7 @@ def load_emotions_dataset() -> Dict[str, FileStorage]:
 
 def load_voice_dataset() -> Dict[str, FileStorage]:
     """
-    Загружает набор данных для обучения модели идентификации голоса из конфигурации.
+    Загрузка набора данных для обучения модели идентификации голоса из конфигурации.
     
     Returns:
         Dict[str, FileStorage]: Словарь, где ключи - это имена, а значения - аудиофайлы

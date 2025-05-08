@@ -9,7 +9,7 @@ class ErrorLogger:
     
     def log_error(self, error_message, module=None, context=None):
         """
-        Записывает ошибку в консоль
+        Запись ошибки в консоль
         
         Args:
             error_message: Текст ошибки
@@ -26,7 +26,7 @@ class ErrorLogger:
     
     def log_exception(self, e, module=None, context=None, message=None):
         """
-        Логирует исключение с информацией о файле и номере строки
+        Логирование исключения с информацией о файле и номере строки
         
         Args:
             e: Объект исключения

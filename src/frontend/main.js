@@ -1,4 +1,57 @@
+// Определяем глобальную функцию логирования ошибок
+window.logErrorToSystem = function(error, module = "frontend", location = window.location.pathname) {
+    // Логируем ошибку в консоль для отладки
+    console.error(`[${module}] [${location}] Ошибка: ${error.toString()}`);
+};
+
+// Глобальный обработчик ошибок
+window.onerror = function(message, source, lineno, colno, error) {
+    logErrorToSystem(message, "global", source + ":" + lineno);
+    return false;
+};
+
+// Проверка совместимости браузера
+function checkBrowserCompatibility() {
+    const features = {
+        fetch: typeof fetch === 'function',
+        FormData: typeof FormData === 'function',
+        FileReader: typeof FileReader === 'function',
+        Audio: typeof Audio === 'function'
+    };
+    
+    const missingFeatures = Object.entries(features)
+        .filter(([, supported]) => !supported)
+        .map(([feature]) => feature);
+    
+    if (missingFeatures.length > 0) {
+        const message = `Ваш браузер не поддерживает необходимые функции: ${missingFeatures.join(', ')}. Пожалуйста, обновите ваш браузер.`;
+        
+        // Создаем элемент для отображения ошибки
+        const errorElement = document.createElement('div');
+        errorElement.style.backgroundColor = '#f44336';
+        errorElement.style.color = 'white';
+        errorElement.style.padding = '20px';
+        errorElement.style.margin = '20px';
+        errorElement.style.borderRadius = '5px';
+        errorElement.style.textAlign = 'center';
+        errorElement.textContent = message;
+        
+        // Вставляем в начало body
+        document.body.insertBefore(errorElement, document.body.firstChild);
+        
+        console.error(message);
+        return false;
+    }
+    
+    return true;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    // Проверяем совместимость браузера
+    if (!checkBrowserCompatibility()) {
+        return; // Останавливаем инициализацию при несовместимости
+    }
+    
     const targetEmotionElement = document.getElementById('target-emotion');
     const audioFileInput = document.getElementById('audio-file');
     const fileNameDisplay = document.getElementById('file-name');
@@ -31,14 +84,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     targetEmotionElement.classList.add('fade-in');
                 } else {
                     console.error('Элемент с id "target-emotion" не найден');
-                }
-            })
-            .catch(error => {
-                console.error('Ошибка получения эмоции дня: ' + error.message);
-                // Запасной вариант - используем "радость" по умолчанию
-                targetEmotion = "радость";
-                if (targetEmotionElement) {
-                    targetEmotionElement.textContent = targetEmotion;
                 }
             });
     }

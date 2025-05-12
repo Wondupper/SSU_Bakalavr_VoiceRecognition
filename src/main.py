@@ -19,23 +19,14 @@ app.register_blueprint(api_bp, url_prefix='/api')
 def serve_frontend(path):
     # Главная страница
     if path == "":
-        return send_from_directory(os.path.join(basedir, 'frontend/identification'), 'index.html')
+        return send_from_directory(os.path.join(basedir, 'frontend'), 'index.html')
     
-    # Перенаправление устаревшего пути /common.js на новый
-    if path == "common.js":
-        return redirect("/common/common.js")
-    
-    # CSS и JavaScript файлы для разных разделов
     if path.endswith('.css') or path.endswith('.js'):
-        directory, filename = os.path.split(path)
-        return send_from_directory(os.path.join(basedir, 'frontend', directory), filename)
+        return send_from_directory(os.path.join(basedir, 'frontend'), path)
+            
     
     # Для всех остальных путей возвращаем главную страницу
-    return send_from_directory(os.path.join(basedir, 'frontend/identification'), 'index.html')
-
-@app.route('/common/<path:filename>')
-def serve_common_files(filename):
-    return send_from_directory(os.path.join(basedir, 'frontend/common'), filename)
+    return send_from_directory(os.path.join(basedir, 'frontend'), 'index.html')
 
 def initialize_models():
     """
@@ -73,7 +64,7 @@ if __name__ == '__main__':
     print("Сервер готов. Для завершения нажмите Ctrl+C")
     try:
         # Запуск сервер
-        app.run(debug=False, host='0.0.0.0', port=5000)
+        app.run(debug=True, host='0.0.0.0', port=5000, use_reloader = False)
     except KeyboardInterrupt:
         print("\nПолучен сигнал завершения.")
         print("Завершение работы сервера.")

@@ -138,21 +138,18 @@ class VoiceIdentificationModel(BaseMLModel):
     """
     Модель для идентификации пользователя по голосу.
     """
-    
     def __init__(self) -> None:
         """
         Инициализация модели для идентификации по голосу.
         """
         super().__init__("voice_identification_model", VOICE_MODEL_PARAMS)
-        
+    
     def create_model(self, input_dim: int, num_classes: int) -> nn.Module:
         """
         Создание модели нейронной сети для идентификации по голосу.
-        
         Args:
             input_dim: Размерность входных данных
             num_classes: Количество классов
-            
         Returns:
             nn.Module: Модель нейронной сети
         """

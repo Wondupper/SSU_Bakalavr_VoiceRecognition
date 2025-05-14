@@ -8,20 +8,16 @@ from backend.config import SAMPLE_RATE, AUGMENTATION
 def apply_augmentation(waveform: torch.Tensor) -> List[torch.Tensor]:
     """
     Применение аугментации к аудиоволне для расширения обучающей выборки
-    
     Args:
         waveform: Тензор аудио [channels, time]
-        
     Returns:
         Список аугментированных аудиоволн
     """
     final_waveforms: List[torch.Tensor] = [waveform]  # Добавляем оригинальное аудио
-    
     final_waveforms.extend(change_speed(waveform=waveform))
     final_waveforms.extend(add_reverbiration(waveform=waveform))
     final_waveforms.extend(add_masking(waveform=waveform))
     final_waveforms.extend(add_noise(waveform))
-    
     return final_waveforms
 
 

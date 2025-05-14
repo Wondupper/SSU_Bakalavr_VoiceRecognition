@@ -8,113 +8,87 @@ from backend.config import SAMPLE_RATE, AUDIO_FRAGMENT_LENGTH, IS_AUGMENTATION_E
 from backend.ml.common.augmentator import apply_augmentation
 
 
-def get_features_tensors_from_audio_for_training(audio_file: FileStorage, target_length: int) -> List[torch.Tensor]:
+def get_features_tensors_from_audio_for_training(audio_file: FileStorage,
+                                                target_length: int) -> List[torch.Tensor]:
     """
     Главный метод для извлечения признаков из аудиофайла для обучения моделей
-    
     Args:
         audio_file: Файл аудио
         target_length: Целевая длина тензора признаков
-        
     Returns:
         Список тензоров признаков для каждого фрагмента
     """
-
     enhanced_waveform: torch.Tensor = preprocess(audio_file=audio_file)
-    
     # Применение аугментации
-    augmented_waveforms: List[torch.Tensor] = apply_augmentation(enhanced_waveform) if IS_AUGMENTATION_ENABLED else [enhanced_waveform]
-    
+    augmented_waveforms: List[torch.Tensor] = apply_augmentation(
+        enhanced_waveform) if IS_AUGMENTATION_ENABLED else [enhanced_waveform]
     # Обработка каждой аугментированной формы
     features_list: List[torch.Tensor] = []
     for aug_waveform in augmented_waveforms:
         features_list.extend(extract(aug_waveform, target_length)) 
-    
     return features_list
 
-def get_features_tensors_from_audio_for_prediction(audio_file: FileStorage, target_length: int) -> List[torch.Tensor]:
+def get_features_tensors_from_audio_for_prediction(audio_file: FileStorage,
+                                                target_length: int) -> List[torch.Tensor]:
     """
     Главный метод для извлечения признаков из аудиофайла с помощью для предсказания
-    
     Args:
         audio_file: Файл аудио
         target_length: Целевая длина тензора признаков
-        
     Returns:
         Список тензоров признаков для каждого фрагмента
     """
-    
     enhanced_waveform: torch.Tensor = preprocess(audio_file=audio_file)
-    
     # Обработка аудиоформы
     features_list: List[torch.Tensor] = extract(enhanced_waveform, target_length)
-    
     return features_list
 
 
 def preprocess(audio_file: FileStorage) -> torch.Tensor:
     """
     Набор последовательно выполняемых методов для предобработки аудиофайла
-    
     Args:
         audio_file: Файл аудио
-
     Returns:
         Тензор признаков аудиофайла
     """
-
     # Загрузка аудио из файла
     waveform, sample_rate = load_audio_from_file(audio_file)
-    
     # Предварительная обработка
     waveform: torch.Tensor = preprocess_audio(waveform, sample_rate)
-    
     # Применение шумоподавления
     enhanced_waveform: torch.Tensor = apply_noise_reduction(waveform)
-    
     # Удаление тишины
     enhanced_waveform: torch.Tensor = remove_silence(enhanced_waveform)
-
     return enhanced_waveform
 
 
 def extract(waveform: torch.Tensor, target_length: int) -> List[torch.Tensor]:
     """
     Набор последовательно выполняемых методов для извлечения признаков из аудиофайла
-    
     Args:
         waveform: Аудиоволна
         target_length: Целевая длина тензора признаков
-        
     Returns:
         Список тензоров признаков аудиофайла
     """
-
     features_list: List[torch.Tensor] = []
-    
     # Разбиение на фрагменты
     fragments: List[torch.Tensor] = split_into_fragments(waveform)
-    
     # Извлечение признаков из каждого фрагмента
     for fragment in fragments:
         # MFCC признаки
         mfcc: torch.Tensor = extract_mfcc_features(fragment)
-
         # Дельта и дельта-дельта коэффициенты
         delta: torch.Tensor
         delta2: torch.Tensor
         delta, delta2 = compute_delta_features(mfcc)
-
         # Спектральные признаки
         spec_features: torch.Tensor = extract_spectral_features(fragment, mfcc.shape[2])
-
         # Объединение всех признаков
         features: torch.Tensor = combine_features(mfcc, delta, delta2, spec_features, target_length)
-        
         features_list.append(features)
-    
     return features_list
-
 
 
 def load_audio_from_file(audio_file: FileStorage) -> Tuple[torch.Tensor, int]:

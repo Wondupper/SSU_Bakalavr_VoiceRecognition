@@ -140,13 +140,11 @@ class EmotionRecognitionModel(BaseMLModel):
     """
     Модель для распознавания эмоций в речи.
     """
-    
     def __init__(self) -> None:
         """
         Инициализация модели для распознавания эмоций в речи.
         """
         super().__init__("emotions_recognitions_model", EMOTIONS_MODEL_PARAMS)
-        
         # Инициализируем словари на основе списка эмоций из конфига
         for idx, emotion in enumerate(EMOTIONS):
             self.classes[emotion] = idx
@@ -155,11 +153,9 @@ class EmotionRecognitionModel(BaseMLModel):
     def create_model(self, input_dim: int, num_classes: int) -> nn.Module:
         """
         Создание модели нейронной сети для распознавания эмоций.
-        
         Args:
             input_dim: Размерность входных данных
             num_classes: Количество классов
-            
         Returns:
             nn.Module: Модель нейронной сети
         """

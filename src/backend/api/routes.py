@@ -92,17 +92,14 @@ def identify() -> Response:
         
         # Напрямую идентифицируем пользователя по голосу
         identity: str = voice_id_model.predict(audio_file)
-        
         # Получаем распознанную эмоцию
         detected_emotion: str = emotion_model.predict(audio_file)
-        
         # Рассчитываем успешность идентификации
         success: bool = True
         message: str = "Идентификация выполнена успешно"
-        
         if identity == "unknown" and detected_emotion != expected_emotion:
             success = False
-            message = "Не удалось распознать пользователя и эмоцию"
+            message = f"Не удалось распознать пользователя и эмоция не соответствует ожидаемой ({detected_emotion} вместо {expected_emotion})"
             info_logger.info("Failed to recognize both user and emotion")
         elif identity == "unknown":
             success = False
@@ -112,7 +109,6 @@ def identify() -> Response:
             success = False
             message = f"Эмоция не соответствует ожидаемой ({detected_emotion} вместо {expected_emotion})"
             info_logger.info(f"Emotion mismatch: {detected_emotion} instead of {expected_emotion}")
-        
         info_logger.info(f"Final identification result - Success: {success}, Message: {message}")
         return jsonify({
             'success': success,

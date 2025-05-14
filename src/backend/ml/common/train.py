@@ -15,14 +15,12 @@ def train_one_epoch(
 ) -> Dict[str, float]:
     """
     Выполнение одной эпохи обучения модели.
-    
     Args:
         model: Модель PyTorch
         data_loader: Загрузчик данных
         optimizer: Оптимизатор
         criterion: Функция потерь
         device: Устройство для вычислений
-        
     Returns:
         Словарь с метриками обучения
     """

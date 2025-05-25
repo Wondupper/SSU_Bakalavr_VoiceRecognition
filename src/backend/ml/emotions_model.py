@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from backend.config import EMOTIONS, EMOTIONS_MODEL_PARAMS
+from backend.config import DATA_EMOTIONS, EMOTIONS_MODEL_PARAMS
 from backend.ml.common.base_model import BaseMLModel
 
 class SqueezeExcitationBlock(nn.Module):
@@ -146,7 +146,7 @@ class EmotionRecognitionModel(BaseMLModel):
         """
         super().__init__("emotions_recognitions_model", EMOTIONS_MODEL_PARAMS)
         # Инициализируем словари на основе списка эмоций из конфига
-        for idx, emotion in enumerate(EMOTIONS):
+        for idx, emotion in enumerate(list(DATA_EMOTIONS.keys())):
             self.classes[emotion] = idx
             self.index_to_class[idx] = emotion
         

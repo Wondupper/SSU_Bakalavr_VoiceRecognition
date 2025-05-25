@@ -5,7 +5,7 @@ from backend.ml.voice_model import VoiceIdentificationModel
 from backend.ml.emotions_model import EmotionRecognitionModel
 from werkzeug.datastructures import FileStorage
 from backend.loggers.error_logger import error_logger
-from backend.config import EMOTIONS
+from backend.config import DATA_EMOTIONS
 from backend.loggers.info_logger import info_logger
 
 # Инициализация моделей
@@ -13,7 +13,7 @@ voice_id_model: VoiceIdentificationModel = VoiceIdentificationModel()
 emotion_model: EmotionRecognitionModel = EmotionRecognitionModel()
 
 # Эмоция дня, которая генерируется один раз при запуске сервера
-DAILY_EMOTION: str = random.choice(EMOTIONS)
+DAILY_EMOTION: str = random.choice(list(DATA_EMOTIONS.keys()))
 
 def handle_error(error: Any, module: str = "api", location: str = "general", status_code: int = 400) -> Tuple[Response, int]:
     """
@@ -111,10 +111,7 @@ def identify() -> Response:
             info_logger.info(f"Emotion mismatch: {detected_emotion} instead of {expected_emotion}")
         info_logger.info(f"Final identification result - Success: {success}, Message: {message}")
         return jsonify({
-            'success': success,
-            'message': message,
-            'identity': identity,
-            'emotion': expected_emotion,
+            'success': success,'message': message,'identity': identity,'emotion': expected_emotion,
             'match': detected_emotion
         })
         
